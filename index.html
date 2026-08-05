@@ -245,6 +245,8 @@
   </main>
 
   <script>
+    const URL_SISTEMA_PILOTO =
+  'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
     let fluxoMicrofone = null;
     let gravador = null;
     let partesAudio = [];
@@ -415,10 +417,167 @@
 
 
     function enviarAoSistema() {
-      if (!arquivoAudio) {
-        mostrarErro(
-          'Nenhum áudio foi gravado.'
+  if (!arquivoAudio) {
+    mostrarErro(
+      'Nenhum áudio foi gravado.'
+    );
+
+    return;
+  }
+
+  if (
+    !URL_SISTEMA_PILOTO ||
+    !URL_SISTEMA_PILOTO.endsWith('/exec')
+  ) {
+    mostrarErro(
+      'O endereço do sistema da Piloto não foi configurado corretamente.'
+    );
+
+    return;
+  }
+
+  const botao =
+    document.getElementById('botaoEnviar');
+
+  botao.disabled = true;
+  botao.textContent =
+    'Preparando e enviando áudio...';
+
+  mostrarSucesso(
+    'Preparando o áudio. Não feche esta página.'
+  );
+
+  const leitor = new FileReader();
+
+  leitor.onloadend = function () {
+    try {
+      const resultado =
+        String(leitor.result || '');
+
+      const audioBase64 =
+        resultado.includes(',')
+          ? resultado.split(',')[1]
+          : resultado;
+
+      if (!audioBase64) {
+        throw new Error(
+          'O áudio não pôde ser convertido.'
         );
+      }
+
+      const extensao =
+        arquivoAudio.type.includes('mp4')
+          ? 'mp4'
+          : 'webm';
+
+      const formulario =
+        document.createElement('form');
+
+      formulario.method = 'POST';
+      formulario.action =
+        URL_SISTEMA_PILOTO;
+
+      /*
+       * A página será substituída pela tela
+       * de confirmação do Apps Script.
+       */
+      formulario.target = '_self';
+
+      const campos = {
+        acao: 'processar_audio',
+
+        token:
+          gerarIdentificadorAtendimento(),
+
+        mimeType:
+          arquivoAudio.type ||
+          'audio/webm',
+
+        nomeArquivo:
+          'atendimento-piloto.' +
+          extensao,
+
+        audioBase64:
+          audioBase64
+      };
+
+      Object.keys(campos).forEach(
+        function (nomeCampo) {
+          const campo =
+            document.createElement('input');
+
+          campo.type = 'hidden';
+          campo.name = nomeCampo;
+          campo.value = campos[nomeCampo];
+
+          formulario.appendChild(campo);
+        }
+      );
+
+      document.body.appendChild(
+        formulario
+      );
+
+      formulario.submit();
+    } catch (erro) {
+      botao.disabled = false;
+      botao.textContent =
+        'Enviar áudio para o sistema';
+
+      mostrarErro(
+        erro && erro.message
+          ? erro.message
+          : 'Não foi possível enviar o áudio.'
+      );
+    }
+  };
+
+  leitor.onerror = function () {
+    botao.disabled = false;
+    botao.textContent =
+      'Enviar áudio para o sistema';
+
+    mostrarErro(
+      'Não foi possível preparar o áudio.'
+    );
+  };
+
+  leitor.readAsDataURL(
+    arquivoAudio
+  );
+}
+
+
+/**
+ * Cria um identificador exclusivo
+ * para recuperar o resultado do áudio.
+ */
+function gerarIdentificadorAtendimento() {
+  if (
+    window.crypto &&
+    typeof window.crypto.randomUUID ===
+      'function'
+  ) {
+    return window.crypto
+      .randomUUID()
+      .replace(/-/g, '');
+  }
+
+  const bytes =
+    new Uint8Array(24);
+
+  window.crypto.getRandomValues(
+    bytes
+  );
+
+  return Array.from(bytes)
+    .map(function (numero) {
+      return numero
+        .toString(16)
+        .padStart(2, '0');
+    })
+    .join('');
+}
 
         return;
       }
