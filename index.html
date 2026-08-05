@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Gravador de atendimento — Piloto</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f4f5f7;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #222;
+    }
+
+    .painel {
+      width: 100%;
+      max-width: 620px;
+      padding: 32px;
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.12);
+    }
+
+    .etiqueta {
+      display: inline-block;
+      margin-bottom: 12px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #fff1df;
+      color: #b65b00;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+    }
+
+    .descricao {
+      margin: 0 0 24px;
+      color: #626262;
+      line-height: 1.5;
+    }
+
+    .status {
+      margin-bottom: 20px;
+      padding: 14px;
+      border-radius: 10px;
+      background: #f1f2f4;
+      border: 1px solid #d4d7da;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .status.gravando {
+      background: #fff0f0;
+      border-color: #e5aaaa;
+      color: #991f1f;
+    }
+
+    .tempo {
+      margin-bottom: 22px;
+      text-align: center;
+      font-size: 36px;
+      font-weight: 700;
+    }
+
+    .botoes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px 18px;
+      border: 0;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .iniciar {
+      background: #ed8b1f;
+      color: #fff;
+    }
+
+    .parar {
+      background: #b83b3b;
+      color: #fff;
+    }
+
+    .enviar {
+      margin-top: 14px;
+      background: #218347;
+      color: #fff;
+    }
+
+    .descartar {
+      margin-top: 10px;
+      background: #e8ebee;
+      color: #333;
+    }
+
+    audio {
+      display: none;
+      width: 100%;
+      margin-top: 22px;
+    }
+
+    .mensagem {
+      display: none;
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 10px;
+      line-height: 1.5;
+    }
+
+    .mensagem.erro {
+      display: block;
+      background: #fff0f0;
+      border: 1px solid #e5aaaa;
+      color: #8e1e1e;
+    }
+
+    .mensagem.sucesso {
+      display: block;
+      background: #eaf8ef;
+      border: 1px solid #9bd4ae;
+      color: #185e30;
+    }
+
+    @media (max-width: 520px) {
+      .botoes {
+        grid-template-columns: 1fr;
+      }
+
+      .painel {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="painel">
+    <span class="etiqueta">
+      AUTOESCOLA PILOTO
+    </span>
+
+    <h1>Gravador de atendimento</h1>
+
+    <p class="descricao">
+      Inicie a gravação, fale naturalmente as informações
+      do atendimento e finalize quando todos os alunos
+      tiverem sido informados.
+    </p>
+
+    <div
+      id="status"
+      class="status"
+    >
+      Pronto para gravar
+    </div>
+
+    <div
+      id="tempo"
+      class="tempo"
+    >
+      00:00
+    </div>
+
+    <div class="botoes">
+      <button
+        id="botaoIniciar"
+        class="iniciar"
+        type="button"
+        onclick="iniciarGravacao()"
+      >
+        🎙️ Iniciar gravação
+      </button>
+
+      <button
+        id="botaoParar"
+        class="parar"
+        type="button"
+        disabled
+        onclick="pararGravacao()"
+      >
+        ⏹️ Finalizar gravação
+      </button>
+    </div>
+
+    <audio
+      id="reprodutor"
+      controls
+    ></audio>
+
+    <button
+      id="botaoEnviar"
+      class="enviar"
+      type="button"
+      disabled
+      onclick="enviarAoSistema()"
+    >
+      Enviar áudio para o sistema
+    </button>
+
+    <button
+      id="botaoDescartar"
+      class="descartar"
+      type="button"
+      disabled
+      onclick="descartarGravacao()"
+    >
+      Descartar e gravar novamente
+    </button>
+
+    <div
+      id="mensagem"
+      class="mensagem"
+    ></div>
+  </main>
+
+  <script>
+    let fluxoMicrofone = null;
+    let gravador = null;
+    let partesAudio = [];
+    let arquivoAudio = null;
+    let tipoAudio = '';
+    let urlAudio = null;
+
+    let inicioGravacao = null;
+    let intervaloRelogio = null;
+
+
+    function escolherTipoAudio() {
+      const tipos = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4'
+      ];
+
+      for (const tipo of tipos) {
+        if (
+          window.MediaRecorder &&
+          MediaRecorder.isTypeSupported(tipo)
+        ) {
+          return tipo;
+        }
+      }
+
+      return '';
+    }
+
+
+    async function iniciarGravacao() {
+      limparMensagem();
+
+      if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+      ) {
+        mostrarErro(
+          'Este navegador não permite acesso ao microfone. ' +
+          'Abra a página no Google Chrome atualizado.'
+        );
+
+        return;
+      }
+
+      try {
+        fluxoMicrofone =
+          await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+
+        tipoAudio = escolherTipoAudio();
+
+        const configuracao = tipoAudio
+          ? { mimeType: tipoAudio }
+          : undefined;
+
+        gravador = new MediaRecorder(
+          fluxoMicrofone,
+          configuracao
+        );
+
+        partesAudio = [];
+
+        gravador.addEventListener(
+          'dataavailable',
+          function (evento) {
+            if (
+              evento.data &&
+              evento.data.size > 0
+            ) {
+              partesAudio.push(evento.data);
+            }
+          }
+        );
+
+        gravador.addEventListener(
+          'stop',
+          finalizarArquivoAudio
+        );
+
+        gravador.start(500);
+
+        iniciarRelogio();
+        atualizarTelaGravando(true);
+      } catch (erro) {
+        encerrarMicrofone();
+
+        let mensagem =
+          'Não foi possível acessar o microfone.';
+
+        if (erro && erro.name === 'NotAllowedError') {
+          mensagem =
+            'O acesso ao microfone foi bloqueado. ' +
+            'Autorize o microfone no navegador e tente novamente.';
+        }
+
+        mostrarErro(mensagem);
+      }
+    }
+
+
+    function pararGravacao() {
+      if (
+        gravador &&
+        gravador.state !== 'inactive'
+      ) {
+        gravador.stop();
+      }
+
+      pararRelogio();
+      atualizarTelaGravando(false);
+      encerrarMicrofone();
+    }
+
+
+    function finalizarArquivoAudio() {
+      const tipoFinal =
+        tipoAudio ||
+        (
+          partesAudio[0] &&
+          partesAudio[0].type
+        ) ||
+        'audio/webm';
+
+      arquivoAudio = new Blob(
+        partesAudio,
+        {
+          type: tipoFinal
+        }
+      );
+
+      if (urlAudio) {
+        URL.revokeObjectURL(urlAudio);
+      }
+
+      urlAudio =
+        URL.createObjectURL(arquivoAudio);
+
+      const reprodutor =
+        document.getElementById('reprodutor');
+
+      reprodutor.src = urlAudio;
+      reprodutor.style.display = 'block';
+
+      document.getElementById(
+        'botaoEnviar'
+      ).disabled = false;
+
+      document.getElementById(
+        'botaoDescartar'
+      ).disabled = false;
+
+      document.getElementById(
+        'status'
+      ).textContent =
+        'Gravação concluída — confira o áudio';
+
+      mostrarSucesso(
+        'Áudio gravado. Você pode ouvi-lo antes de enviar.'
+      );
+    }
+
+
+    function enviarAoSistema() {
+      if (!arquivoAudio) {
+        mostrarErro(
+          'Nenhum áudio foi gravado.'
+        );
+
+        return;
+      }
+
+      if (!window.opener) {
+        mostrarErro(
+          'Esta página deve ser aberta pelo sistema de cadastro da Piloto.'
+        );
+
+        return;
+      }
+
+      const botao =
+        document.getElementById('botaoEnviar');
+
+      botao.disabled = true;
+      botao.textContent =
+        'Preparando áudio...';
+
+      const leitor = new FileReader();
+
+      leitor.onloadend = function () {
+        const resultado =
+          String(leitor.result || '');
+
+        const base64 =
+          resultado.includes(',')
+            ? resultado.split(',')[1]
+            : resultado;
+
+        const extensao =
+          arquivoAudio.type.includes('mp4')
+            ? 'mp4'
+            : 'webm';
+
+        window.opener.postMessage(
+          {
+            tipo: 'PILOTO_AUDIO_GRAVADO',
+            mimeType:
+              arquivoAudio.type ||
+              'audio/webm',
+            nomeArquivo:
+              'atendimento-piloto.' +
+              extensao,
+            audioBase64: base64
+          },
+          '*'
+        );
+
+        mostrarSucesso(
+          'Áudio enviado ao sistema. Esta janela será fechada.'
+        );
+
+        setTimeout(function () {
+          window.close();
+        }, 900);
+      };
+
+      leitor.onerror = function () {
+        botao.disabled = false;
+        botao.textContent =
+          'Enviar áudio para o sistema';
+
+        mostrarErro(
+          'Não foi possível preparar o áudio.'
+        );
+      };
+
+      leitor.readAsDataURL(arquivoAudio);
+    }
+
+
+    function descartarGravacao() {
+      arquivoAudio = null;
+      partesAudio = [];
+
+      if (urlAudio) {
+        URL.revokeObjectURL(urlAudio);
+        urlAudio = null;
+      }
+
+      const reprodutor =
+        document.getElementById('reprodutor');
+
+      reprodutor.pause();
+      reprodutor.removeAttribute('src');
+      reprodutor.load();
+      reprodutor.style.display = 'none';
+
+      document.getElementById(
+        'botaoEnviar'
+      ).disabled = true;
+
+      document.getElementById(
+        'botaoEnviar'
+      ).textContent =
+        'Enviar áudio para o sistema';
+
+      document.getElementById(
+        'botaoDescartar'
+      ).disabled = true;
+
+      document.getElementById(
+        'status'
+      ).textContent =
+        'Pronto para gravar';
+
+      document.getElementById(
+        'tempo'
+      ).textContent =
+        '00:00';
+
+      limparMensagem();
+    }
+
+
+    function atualizarTelaGravando(gravando) {
+      const status =
+        document.getElementById('status');
+
+      status.classList.toggle(
+        'gravando',
+        gravando
+      );
+
+      status.textContent = gravando
+        ? '🔴 Gravando atendimento...'
+        : 'Processando gravação...';
+
+      document.getElementById(
+        'botaoIniciar'
+      ).disabled = gravando;
+
+      document.getElementById(
+        'botaoParar'
+      ).disabled = !gravando;
+
+      document.getElementById(
+        'botaoEnviar'
+      ).disabled = true;
+
+      document.getElementById(
+        'botaoDescartar'
+      ).disabled = true;
+    }
+
+
+    function iniciarRelogio() {
+      inicioGravacao = Date.now();
+
+      atualizarRelogio();
+
+      intervaloRelogio = setInterval(
+        atualizarRelogio,
+        500
+      );
+    }
+
+
+    function atualizarRelogio() {
+      if (!inicioGravacao) {
+        return;
+      }
+
+      const segundos = Math.floor(
+        (Date.now() - inicioGravacao) / 1000
+      );
+
+      const minutosTexto = String(
+        Math.floor(segundos / 60)
+      ).padStart(2, '0');
+
+      const segundosTexto = String(
+        segundos % 60
+      ).padStart(2, '0');
+
+      document.getElementById(
+        'tempo'
+      ).textContent =
+        minutosTexto + ':' + segundosTexto;
+    }
+
+
+    function pararRelogio() {
+      if (intervaloRelogio) {
+        clearInterval(intervaloRelogio);
+      }
+
+      intervaloRelogio = null;
+      inicioGravacao = null;
+    }
+
+
+    function encerrarMicrofone() {
+      if (!fluxoMicrofone) {
+        return;
+      }
+
+      fluxoMicrofone
+        .getTracks()
+        .forEach(function (faixa) {
+          faixa.stop();
+        });
+
+      fluxoMicrofone = null;
+    }
+
+
+    function mostrarErro(texto) {
+      const mensagem =
+        document.getElementById('mensagem');
+
+      mensagem.className =
+        'mensagem erro';
+
+      mensagem.textContent = texto;
+    }
+
+
+    function mostrarSucesso(texto) {
+      const mensagem =
+        document.getElementById('mensagem');
+
+      mensagem.className =
+        'mensagem sucesso';
+
+      mensagem.textContent = texto;
+    }
+
+
+    function limparMensagem() {
+      const mensagem =
+        document.getElementById('mensagem');
+
+      mensagem.className = 'mensagem';
+      mensagem.textContent = '';
+    }
+
+
+    window.addEventListener(
+      'beforeunload',
+      function () {
+        encerrarMicrofone();
+
+        if (urlAudio) {
+          URL.revokeObjectURL(urlAudio);
+        }
+      }
+    );
+  </script>
+</body>
+</html>
