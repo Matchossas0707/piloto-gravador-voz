@@ -197,7 +197,6 @@
         id="botaoIniciar"
         class="iniciar"
         type="button"
-        onclick="iniciarGravacao()"
       >
         🎙️ Iniciar gravação
       </button>
@@ -207,7 +206,6 @@
         class="parar"
         type="button"
         disabled
-        onclick="pararGravacao()"
       >
         ⏹️ Finalizar gravação
       </button>
@@ -223,7 +221,6 @@
       class="enviar"
       type="button"
       disabled
-      onclick="enviarAoSistema()"
     >
       Enviar áudio para o sistema
     </button>
@@ -233,7 +230,6 @@
       class="descartar"
       type="button"
       disabled
-      onclick="descartarGravacao()"
     >
       Descartar e gravar novamente
     </button>
@@ -246,31 +242,97 @@
 
   <script>
     const URL_SISTEMA_PILOTO =
-  'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
+      'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
+
     let fluxoMicrofone = null;
     let gravador = null;
     let partesAudio = [];
     let arquivoAudio = null;
     let tipoAudio = '';
     let urlAudio = null;
-
     let inicioGravacao = null;
     let intervaloRelogio = null;
 
 
+    document.addEventListener(
+      'DOMContentLoaded',
+      inicializarAplicativo
+    );
+
+
+    function inicializarAplicativo() {
+      document
+        .getElementById('botaoIniciar')
+        .addEventListener('click', iniciarGravacao);
+
+      document
+        .getElementById('botaoParar')
+        .addEventListener('click', pararGravacao);
+
+      document
+        .getElementById('botaoEnviar')
+        .addEventListener('click', enviarAoSistema);
+
+      document
+        .getElementById('botaoDescartar')
+        .addEventListener('click', descartarGravacao);
+
+      if (!window.isSecureContext) {
+        bloquearInicio(
+          'A página não está em uma conexão segura. Abra o endereço iniciado por https://.'
+        );
+        return;
+      }
+
+      if (
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== 'function'
+      ) {
+        bloquearInicio(
+          'Este navegador não disponibilizou o acesso ao microfone.'
+        );
+        return;
+      }
+
+      if (typeof window.MediaRecorder === 'undefined') {
+        bloquearInicio(
+          'Este navegador não disponibilizou o gravador de áudio.'
+        );
+        return;
+      }
+
+      document.getElementById('status').textContent =
+        'Pronto para gravar';
+
+      mostrarSucesso(
+        'Sistema carregado. Toque em “Iniciar gravação”.'
+      );
+    }
+
+
+    function bloquearInicio(mensagem) {
+      document.getElementById('botaoIniciar').disabled = true;
+      document.getElementById('status').textContent =
+        'Gravação indisponível';
+      mostrarErro(mensagem);
+    }
+
+
     function escolherTipoAudio() {
       const tipos = [
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
         'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4'
+        'audio/webm'
       ];
 
       for (const tipo of tipos) {
-        if (
-          window.MediaRecorder &&
-          MediaRecorder.isTypeSupported(tipo)
-        ) {
-          return tipo;
+        try {
+          if (MediaRecorder.isTypeSupported(tipo)) {
+            return tipo;
+          }
+        } catch (erro) {
+          // Segue para o próximo tipo.
         }
       }
 
@@ -281,38 +343,33 @@
     async function iniciarGravacao() {
       limparMensagem();
 
-      if (
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia
-      ) {
-        mostrarErro(
-          'Este navegador não permite acesso ao microfone. ' +
-          'Abra a página no Google Chrome atualizado.'
-        );
+      document.getElementById('status').textContent =
+        'Solicitando acesso ao microfone...';
 
-        return;
-      }
+      document.getElementById('botaoIniciar').disabled = true;
 
       try {
         fluxoMicrofone =
           await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
+            audio: true
           });
 
         tipoAudio = escolherTipoAudio();
 
-        const configuracao = tipoAudio
-          ? { mimeType: tipoAudio }
-          : undefined;
+        const configuracao =
+          tipoAudio
+            ? { mimeType: tipoAudio }
+            : undefined;
 
-        gravador = new MediaRecorder(
-          fluxoMicrofone,
+        gravador =
           configuracao
-        );
+            ? new MediaRecorder(
+                fluxoMicrofone,
+                configuracao
+              )
+            : new MediaRecorder(
+                fluxoMicrofone
+              );
 
         partesAudio = [];
 
@@ -330,27 +387,103 @@
 
         gravador.addEventListener(
           'stop',
-          finalizarArquivoAudio
+          function () {
+            finalizarArquivoAudio();
+            encerrarMicrofone();
+          }
         );
 
-        gravador.start(500);
+        gravador.addEventListener(
+          'error',
+          function (evento) {
+            const detalhe =
+              evento &&
+              evento.error &&
+              evento.error.message
+                ? evento.error.message
+                : 'Erro interno do gravador.';
+
+            pararRelogio();
+            atualizarTelaGravando(false);
+            encerrarMicrofone();
+            mostrarErro(detalhe);
+          }
+        );
+
+        /*
+         * Sem o parâmetro de intervalo.
+         * Isso evita incompatibilidades em alguns celulares.
+         */
+        gravador.start();
 
         iniciarRelogio();
         atualizarTelaGravando(true);
       } catch (erro) {
         encerrarMicrofone();
+        pararRelogio();
 
-        let mensagem =
-          'Não foi possível acessar o microfone.';
+        document.getElementById(
+          'botaoIniciar'
+        ).disabled = false;
 
-        if (erro && erro.name === 'NotAllowedError') {
-          mensagem =
-            'O acesso ao microfone foi bloqueado. ' +
-            'Autorize o microfone no navegador e tente novamente.';
-        }
+        document.getElementById(
+          'status'
+        ).textContent =
+          'Não foi possível iniciar';
 
-        mostrarErro(mensagem);
+        mostrarErro(
+          obterMensagemErroMicrofone(erro)
+        );
       }
+    }
+
+
+    function obterMensagemErroMicrofone(erro) {
+      const nome =
+        erro && erro.name
+          ? String(erro.name)
+          : 'Erro desconhecido';
+
+      if (
+        nome === 'NotAllowedError' ||
+        nome === 'SecurityError'
+      ) {
+        return (
+          'O acesso ao microfone foi bloqueado. ' +
+          'No Safari, toque no botão “aA” da barra de endereço, ' +
+          'abra “Ajustes do Site” e permita o Microfone. ' +
+          'Detalhe: ' + nome + '.'
+        );
+      }
+
+      if (nome === 'NotFoundError') {
+        return (
+          'Nenhum microfone foi encontrado pelo navegador. ' +
+          'Detalhe: ' + nome + '.'
+        );
+      }
+
+      if (
+        nome === 'NotReadableError' ||
+        nome === 'AbortError'
+      ) {
+        return (
+          'O microfone está ocupado ou não pôde ser iniciado. ' +
+          'Feche outros aplicativos que estejam usando o microfone ' +
+          'e tente novamente. Detalhe: ' + nome + '.'
+        );
+      }
+
+      return (
+        'Não foi possível iniciar a gravação. ' +
+        'Detalhe técnico: ' +
+        nome +
+        (
+          erro && erro.message
+            ? ' — ' + erro.message
+            : ''
+        )
+      );
     }
 
 
@@ -359,12 +492,19 @@
         gravador &&
         gravador.state !== 'inactive'
       ) {
+        document.getElementById(
+          'status'
+        ).textContent =
+          'Finalizando gravação...';
+
         gravador.stop();
       }
 
       pararRelogio();
-      atualizarTelaGravando(false);
-      encerrarMicrofone();
+
+      document.getElementById(
+        'botaoParar'
+      ).disabled = true;
     }
 
 
@@ -375,7 +515,7 @@
           partesAudio[0] &&
           partesAudio[0].type
         ) ||
-        'audio/webm';
+        'audio/mp4';
 
       arquivoAudio = new Blob(
         partesAudio,
@@ -383,6 +523,23 @@
           type: tipoFinal
         }
       );
+
+      if (!arquivoAudio.size) {
+        document.getElementById(
+          'botaoIniciar'
+        ).disabled = false;
+
+        document.getElementById(
+          'status'
+        ).textContent =
+          'Áudio vazio';
+
+        mostrarErro(
+          'A gravação terminou sem produzir áudio. Tente novamente.'
+        );
+
+        return;
+      }
 
       if (urlAudio) {
         URL.revokeObjectURL(urlAudio);
@@ -396,6 +553,10 @@
 
       reprodutor.src = urlAudio;
       reprodutor.style.display = 'block';
+
+      document.getElementById(
+        'botaoIniciar'
+      ).disabled = true;
 
       document.getElementById(
         'botaoEnviar'
@@ -417,167 +578,156 @@
 
 
     function enviarAoSistema() {
-  if (!arquivoAudio) {
-    mostrarErro(
-      'Nenhum áudio foi gravado.'
-    );
-
-    return;
-  }
-
-  if (
-    !URL_SISTEMA_PILOTO ||
-    !URL_SISTEMA_PILOTO.endsWith('/exec')
-  ) {
-    mostrarErro(
-      'O endereço do sistema da Piloto não foi configurado corretamente.'
-    );
-
-    return;
-  }
-
-  const botao =
-    document.getElementById('botaoEnviar');
-
-  botao.disabled = true;
-  botao.textContent =
-    'Preparando e enviando áudio...';
-
-  mostrarSucesso(
-    'Preparando o áudio. Não feche esta página.'
-  );
-
-  const leitor = new FileReader();
-
-  leitor.onloadend = function () {
-    try {
-      const resultado =
-        String(leitor.result || '');
-
-      const audioBase64 =
-        resultado.includes(',')
-          ? resultado.split(',')[1]
-          : resultado;
-
-      if (!audioBase64) {
-        throw new Error(
-          'O áudio não pôde ser convertido.'
+      if (!arquivoAudio) {
+        mostrarErro(
+          'Nenhum áudio foi gravado.'
         );
+        return;
       }
 
-      const extensao =
-        arquivoAudio.type.includes('mp4')
-          ? 'mp4'
-          : 'webm';
+      if (
+        !URL_SISTEMA_PILOTO ||
+        !URL_SISTEMA_PILOTO.endsWith('/exec')
+      ) {
+        mostrarErro(
+          'O endereço do sistema da Piloto não foi configurado corretamente.'
+        );
+        return;
+      }
 
-      const formulario =
-        document.createElement('form');
+      const botao =
+        document.getElementById('botaoEnviar');
 
-      formulario.method = 'POST';
-      formulario.action =
-        URL_SISTEMA_PILOTO;
+      botao.disabled = true;
+      botao.textContent =
+        'Preparando e enviando áudio...';
 
-      /*
-       * A página será substituída pela tela
-       * de confirmação do Apps Script.
-       */
-      formulario.target = '_self';
+      mostrarSucesso(
+        'Preparando o áudio. Não feche esta página.'
+      );
 
-      const campos = {
-        acao: 'processar_audio',
+      const leitor = new FileReader();
 
-        token:
-          gerarIdentificadorAtendimento(),
+      leitor.onloadend = function () {
+        try {
+          const resultado =
+            String(leitor.result || '');
 
-        mimeType:
-          arquivoAudio.type ||
-          'audio/webm',
+          const audioBase64 =
+            resultado.includes(',')
+              ? resultado.split(',')[1]
+              : resultado;
 
-        nomeArquivo:
-          'atendimento-piloto.' +
-          extensao,
+          if (!audioBase64) {
+            throw new Error(
+              'O áudio não pôde ser convertido.'
+            );
+          }
 
-        audioBase64:
-          audioBase64
+          const tipoArquivo =
+            String(arquivoAudio.type || '');
+
+          const extensao =
+            tipoArquivo.includes('mp4')
+              ? 'mp4'
+              : 'webm';
+
+          const formulario =
+            document.createElement('form');
+
+          formulario.method = 'POST';
+          formulario.action =
+            URL_SISTEMA_PILOTO;
+          formulario.target = '_self';
+
+          const campos = {
+            acao: 'processar_audio',
+            token:
+              gerarIdentificadorAtendimento(),
+            mimeType:
+              arquivoAudio.type ||
+              'audio/mp4',
+            nomeArquivo:
+              'atendimento-piloto.' +
+              extensao,
+            audioBase64:
+              audioBase64
+          };
+
+          Object.keys(campos).forEach(
+            function (nomeCampo) {
+              const campo =
+                document.createElement('input');
+
+              campo.type = 'hidden';
+              campo.name = nomeCampo;
+              campo.value = campos[nomeCampo];
+
+              formulario.appendChild(campo);
+            }
+          );
+
+          document.body.appendChild(
+            formulario
+          );
+
+          formulario.submit();
+        } catch (erro) {
+          botao.disabled = false;
+          botao.textContent =
+            'Enviar áudio para o sistema';
+
+          mostrarErro(
+            erro && erro.message
+              ? erro.message
+              : 'Não foi possível enviar o áudio.'
+          );
+        }
       };
 
-      Object.keys(campos).forEach(
-        function (nomeCampo) {
-          const campo =
-            document.createElement('input');
+      leitor.onerror = function () {
+        botao.disabled = false;
+        botao.textContent =
+          'Enviar áudio para o sistema';
 
-          campo.type = 'hidden';
-          campo.name = nomeCampo;
-          campo.value = campos[nomeCampo];
+        mostrarErro(
+          'Não foi possível preparar o áudio.'
+        );
+      };
 
-          formulario.appendChild(campo);
-        }
-      );
-
-      document.body.appendChild(
-        formulario
-      );
-
-      formulario.submit();
-    } catch (erro) {
-      botao.disabled = false;
-      botao.textContent =
-        'Enviar áudio para o sistema';
-
-      mostrarErro(
-        erro && erro.message
-          ? erro.message
-          : 'Não foi possível enviar o áudio.'
+      leitor.readAsDataURL(
+        arquivoAudio
       );
     }
-  };
-
-  leitor.onerror = function () {
-    botao.disabled = false;
-    botao.textContent =
-      'Enviar áudio para o sistema';
-
-    mostrarErro(
-      'Não foi possível preparar o áudio.'
-    );
-  };
-
-  leitor.readAsDataURL(
-    arquivoAudio
-  );
-}
 
 
-/**
- * Cria um identificador exclusivo
- * para recuperar o resultado do áudio.
- */
-function gerarIdentificadorAtendimento() {
-  if (
-    window.crypto &&
-    typeof window.crypto.randomUUID ===
-      'function'
-  ) {
-    return window.crypto
-      .randomUUID()
-      .replace(/-/g, '');
-  }
+    function gerarIdentificadorAtendimento() {
+      if (
+        window.crypto &&
+        typeof window.crypto.randomUUID ===
+          'function'
+      ) {
+        return window.crypto
+          .randomUUID()
+          .replace(/-/g, '');
+      }
 
-  const bytes =
-    new Uint8Array(24);
+      const bytes =
+        new Uint8Array(24);
 
-  window.crypto.getRandomValues(
-    bytes
-  );
+      window.crypto.getRandomValues(
+        bytes
+      );
 
-  return Array.from(bytes)
-    .map(function (numero) {
-      return numero
-        .toString(16)
-        .padStart(2, '0');
-    })
-    .join('');
-}
+      return Array.from(bytes)
+        .map(function (numero) {
+          return numero
+            .toString(16)
+            .padStart(2, '0');
+        })
+        .join('');
+    }
+
 
     function descartarGravacao() {
       arquivoAudio = null;
@@ -595,6 +745,10 @@ function gerarIdentificadorAtendimento() {
       reprodutor.removeAttribute('src');
       reprodutor.load();
       reprodutor.style.display = 'none';
+
+      document.getElementById(
+        'botaoIniciar'
+      ).disabled = false;
 
       document.getElementById(
         'botaoEnviar'
@@ -656,7 +810,6 @@ function gerarIdentificadorAtendimento() {
 
     function iniciarRelogio() {
       inicioGravacao = Date.now();
-
       atualizarRelogio();
 
       intervaloRelogio = setInterval(
