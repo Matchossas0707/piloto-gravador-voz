@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+  <title>Teste Realtime — Piloto</title>
+
+  <style>
+    :root {
+      color-scheme: light;
+      font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f4f6f8;
+      color: #1f2937;
+      padding: 24px;
+    }
+
+    main {
+      width: min(100%, 520px);
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow:
+        0 12px 32px
+        rgba(0, 0, 0, 0.10);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.55rem;
+    }
+
+    p {
+      line-height: 1.5;
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 15px 18px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: #f47b20;
+      color: #ffffff;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+
+    #status {
+      margin-top: 18px;
+      min-height: 72px;
+      padding: 14px;
+      border-radius: 12px;
+      background: #eef2f7;
+      white-space: pre-line;
+    }
+
+    .sucesso {
+      background: #e8f7ed !important;
+      color: #176b34;
+    }
+
+    .erro {
+      background: #fdecec !important;
+      color: #9b1c1c;
+    }
+
+    small {
+      display: block;
+      margin-top: 14px;
+      line-height: 1.45;
+      color: #5f6b7a;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Teste de credencial Realtime</h1>
+
+    <p>
+      Esta página verifica se o GitHub Pages
+      consegue receber uma credencial temporária
+      do Apps Script.
+    </p>
+
+    <button
+      id="botaoTeste"
+      type="button"
+    >
+      Testar conexão
+    </button>
+
+    <div
+      id="status"
+      role="status"
+      aria-live="polite"
+    >
+      Aguardando o teste.
+    </div>
+
+    <small>
+      O token não será mostrado nem salvo nesta página.
+      Este teste ainda não acessa o microfone.
+    </small>
+  </main>
+
+  <script>
+    const URL_APPS_SCRIPT =
+      'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
+
+    const botao =
+      document.getElementById('botaoTeste');
+
+    const statusElemento =
+      document.getElementById('status');
+
+    let timeoutTeste = null;
+    let tokenEmMemoria = '';
+
+    function definirStatus(
+      mensagem,
+      tipo = ''
+    ) {
+      statusElemento.textContent =
+        mensagem;
+
+      statusElemento.className =
+        tipo;
+    }
+
+    function limparScriptAnterior() {
+      const anterior =
+        document.getElementById(
+          'scriptTokenRealtime'
+        );
+
+      if (anterior) {
+        anterior.remove();
+      }
+    }
+
+    function finalizarEspera() {
+      if (timeoutTeste) {
+        clearTimeout(timeoutTeste);
+        timeoutTeste = null;
+      }
+
+      botao.disabled = false;
+    }
+
+    window.receberTokenRealtimeTeste =
+      function (dados) {
+        finalizarEspera();
+        limparScriptAnterior();
+
+        if (
+          !dados ||
+          dados.sucesso !== true ||
+          !dados.token
+        ) {
+          definirStatus(
+            'Falha ao receber a credencial.\n' +
+            (
+              dados && dados.erro
+                ? dados.erro
+                : 'Resposta inválida.'
+            ),
+            'erro'
+          );
+          return;
+        }
+
+        /*
+         * O token fica apenas em memória,
+         * pronto para o próximo teste WebRTC.
+         */
+        tokenEmMemoria = dados.token;
+
+        definirStatus(
+          'Conexão confirmada!\n' +
+          'Token temporário recebido: sim\n' +
+          'Sessão: ' +
+          (dados.tipoSessao || 'transcription') +
+          '\nModelo: ' +
+          (dados.modelo || 'não informado') +
+          '\nTempo do servidor: ' +
+          (dados.tempoMs || 0) +
+          ' ms',
+          'sucesso'
+        );
+
+        /*
+         * Remove o token da memória depois de
+         * dois minutos neste teste preliminar.
+         */
+        setTimeout(function () {
+          tokenEmMemoria = '';
+        }, 120000);
+      };
+
+    function testarConexao() {
+      limparScriptAnterior();
+      finalizarEspera();
+
+      botao.disabled = true;
+
+      definirStatus(
+        'Solicitando credencial temporária...'
+      );
+
+      const script =
+        document.createElement('script');
+
+      script.id =
+        'scriptTokenRealtime';
+
+      script.src =
+        URL_APPS_SCRIPT +
+        '?acao=tokenRealtimeTeste' +
+        '&callback=receberTokenRealtimeTeste' +
+        '&_=' +
+        Date.now();
+
+      script.onerror = function () {
+        finalizarEspera();
+        limparScriptAnterior();
+
+        definirStatus(
+          'Não foi possível carregar a resposta ' +
+          'do Apps Script. Confirme a implantação ' +
+          'e se esta conta tem acesso ao app da Web.',
+          'erro'
+        );
+      };
+
+      timeoutTeste = setTimeout(
+        function () {
+          finalizarEspera();
+          limparScriptAnterior();
+
+          definirStatus(
+            'O Apps Script não respondeu dentro ' +
+            'de 15 segundos.',
+            'erro'
+          );
+        },
+        15000
+      );
+
+      document.head.appendChild(script);
+    }
+
+    botao.addEventListener(
+      'click',
+      testarConexao
+    );
+  </script>
+</body>
+</html>
