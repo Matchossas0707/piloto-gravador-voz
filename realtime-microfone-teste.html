@@ -497,7 +497,241 @@ function solicitarTokenPreInterpretacao() {
   );
 }
 
+function configurarFerramentaPreInterpretacao(dc) {
+  dc.send(
+    JSON.stringify({
+      type: 'session.update',
 
+      session: {
+        tools: [
+          {
+            type: 'function',
+
+            name:
+              'atualizar_cadastro_provisorio',
+
+            description:
+              'Atualize silenciosamente o cadastro provisório após cada trecho relevante da conversa. Envie sempre o estado completo mais recente, considerando correções e exclusões.',
+
+            parameters: {
+              type: 'object',
+
+              properties: {
+                autoescola: {
+                  type: 'string',
+                  description:
+                    'Autoescola identificada. Use string vazia se ainda não souber.'
+                },
+
+                instrutor: {
+                  type: 'string',
+                  description:
+                    'Instrutor identificado. Use string vazia se ainda não souber.'
+                },
+
+                data_exame: {
+                  type: 'string',
+                  description:
+                    'Data do exame em AAAA-MM-DD. Use string vazia se ainda não souber.'
+                },
+
+                alunos: {
+                  type: 'array',
+
+                  items: {
+                    type: 'object',
+
+                    properties: {
+                      nome: {
+                        type: 'string'
+                      },
+
+                      forma_pagamento: {
+                        type: 'string',
+                        description:
+                          'pix, dinheiro, débito, crédito, boleto, transferência ou string vazia.'
+                      }
+                    },
+
+                    required: [
+                      'nome',
+                      'forma_pagamento'
+                    ]
+                  }
+                },
+
+                duvidas: {
+                  type: 'array',
+
+                  items: {
+                    type: 'string'
+                  }
+                }
+              },
+
+              required: [
+                'autoescola',
+                'instrutor',
+                'data_exame',
+                'alunos',
+                'duvidas'
+              ]
+            }
+          }
+        ],
+
+        tool_choice: 'auto'
+      }
+    })
+  );
+}function mostrarCadastroProvisorioNaTela() {
+  let caixa =
+    document.getElementById(
+      'cadastroProvisorioPreIA'
+    );
+
+  if (!caixa) {
+    caixa =
+      document.createElement('pre');
+
+    caixa.id =
+      'cadastroProvisorioPreIA';
+
+    caixa.style.whiteSpace =
+      'pre-wrap';
+
+    caixa.style.wordBreak =
+      'break-word';
+
+    caixa.style.padding =
+      '16px';
+
+    caixa.style.marginTop =
+      '16px';
+
+    caixa.style.border =
+      '1px solid #ccc';
+
+    caixa.style.borderRadius =
+      '12px';
+
+    caixa.style.fontSize =
+      '14px';
+
+    caixa.style.textAlign =
+      'left';
+
+    const pai =
+      transcricaoElemento &&
+      transcricaoElemento.parentElement;
+
+    if (pai) {
+      pai.insertBefore(
+        caixa,
+        transcricaoElemento
+      );
+    } else {
+      document.body.appendChild(
+        caixa
+      );
+    }
+  }
+
+  if (!cadastroProvisorio) {
+    caixa.textContent =
+      'Pré-IA: aguardando informações...';
+
+    return;
+  }
+
+  caixa.textContent =
+    'Pré-IA — cadastro provisório:\n\n' +
+    JSON.stringify(
+      cadastroProvisorio,
+      null,
+      2
+    );
+}
+   function processarEventoPreInterpretacao(
+  dados,
+  dc
+) {
+  if (
+    dados.type !== 'response.done' ||
+    !dados.response ||
+    !Array.isArray(
+      dados.response.output
+    )
+  ) {
+    return;
+  }
+
+  const chamada =
+    dados.response.output.find(
+      function (item) {
+        return (
+          item.type === 'function_call' &&
+          item.name ===
+            'atualizar_cadastro_provisorio'
+        );
+      }
+    );
+
+  if (!chamada) {
+    return;
+  }
+
+  try {
+    cadastroProvisorio =
+      JSON.parse(
+        chamada.arguments || '{}'
+      );
+    mostrarCadastroProvisorioNaTela();
+
+    console.log(
+      '[PRE-IA CADASTRO]',
+      cadastroProvisorio
+    );
+
+  } catch (erro) {
+    console.error(
+      '[PRE-IA] JSON inválido:',
+      chamada.arguments
+    );
+
+    return;
+  }
+
+  /*
+   * Confirma para a IA que o estado
+   * provisório foi recebido.
+   */
+  if (
+    chamada.call_id &&
+    dc &&
+    dc.readyState === 'open'
+  ) {
+    dc.send(
+      JSON.stringify({
+        type:
+          'conversation.item.create',
+
+        item: {
+          type:
+            'function_call_output',
+
+          call_id:
+            chamada.call_id,
+
+          output:
+            JSON.stringify({
+              sucesso: true
+            })
+        }
+      })
+    );
+  }
+}
 function preInterpretacaoAindaValida() {
   return (
     conexaoPreInterpretacaoPronta &&
@@ -540,25 +774,26 @@ async function prepararPreInterpretacao() {
         fluxoMicrofone
       );
 
-      dc.addEventListener(
-        'message',
-        function (evento) {
-          try {
-            const dados =
-              JSON.parse(evento.data);
+     dc.addEventListener(
+  'message',
+  function (evento) {
+    try {
+      const dados =
+        JSON.parse(evento.data);
 
-            console.log(
-              '[PRE-INTERPRETACAO]',
-              dados
-            );
-          } catch (erro) {
-            console.error(
-              '[PRE-INTERPRETACAO] Evento inválido',
-              erro
-            );
-          }
-        }
+      processarEventoPreInterpretacao(
+        dados,
+        dc
       );
+
+    } catch (erro) {
+      console.error(
+        '[PRE-INTERPRETACAO] Evento inválido',
+        erro
+      );
+    }
+  }
+);
 
       pc.addEventListener(
         'connectionstatechange',
@@ -655,7 +890,9 @@ async function prepararPreInterpretacao() {
           );
         }
       );
-
+configurarFerramentaPreInterpretacao(
+  dc
+);
       conexaoPreInterpretacao = pc;
       canalPreInterpretacao = dc;
 
@@ -1201,7 +1438,9 @@ window.addEventListener(
   }
 
 
-  async function iniciar() {
+  async function iniciar() {cadastroProvisorio = null;
+
+mostrarCadastroProvisorioNaTela();
     if (
       atendimentoAtivo ||
       finalizando
