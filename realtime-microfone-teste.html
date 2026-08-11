@@ -202,7 +202,25 @@ let timeoutCadastro = null;
   let timeoutToken = null;
   let resolverToken = null;
   let rejeitarToken = null;
+// ========================================
+// PRÉ-INTERPRETAÇÃO REALTIME
+// ========================================
 
+let conexaoPreInterpretacao = null;
+let canalPreInterpretacao = null;
+
+let conexaoPreInterpretacaoPronta = false;
+let preparandoPreInterpretacao = null;
+
+let timeoutTokenPreInterpretacao = null;
+let resolverTokenPreInterpretacao = null;
+let rejeitarTokenPreInterpretacao = null;
+
+/*
+ * Aqui ficará o cadastro que a IA
+ * vai montando enquanto a pessoa fala.
+ */
+let cadastroProvisorio = null;
 
   function definirStatus(
     mensagem,
@@ -347,7 +365,328 @@ let timeoutCadastro = null;
               )
             );
           };
+window.receberTokenPreInterpretacaoRealtime =
+  function (dados) {
 
+    if (timeoutTokenPreInterpretacao) {
+      clearTimeout(
+        timeoutTokenPreInterpretacao
+      );
+
+      timeoutTokenPreInterpretacao = null;
+    }
+
+    if (
+      !dados ||
+      dados.sucesso !== true ||
+      !dados.token
+    ) {
+      const mensagem =
+        dados && dados.erro
+          ? dados.erro
+          : 'Não foi possível obter o token da pré-interpretação.';
+
+      if (rejeitarTokenPreInterpretacao) {
+        rejeitarTokenPreInterpretacao(
+          new Error(mensagem)
+        );
+      }
+
+      resolverTokenPreInterpretacao = null;
+      rejeitarTokenPreInterpretacao = null;
+
+      return;
+    }
+
+    if (resolverTokenPreInterpretacao) {
+      resolverTokenPreInterpretacao({
+        token: dados.token,
+        modelo: dados.modelo,
+        expiraEm: dados.expiraEm
+      });
+    }
+
+    resolverTokenPreInterpretacao = null;
+    rejeitarTokenPreInterpretacao = null;
+  };
+
+
+function solicitarTokenPreInterpretacao() {
+  return new Promise(
+    function (resolve, reject) {
+
+      resolverTokenPreInterpretacao =
+        resolve;
+
+      rejeitarTokenPreInterpretacao =
+        reject;
+
+      const script =
+        document.createElement(
+          'script'
+        );
+
+      script.src =
+        URL_APPS_SCRIPT +
+        '?acao=tokenPreInterpretacao' +
+        '&callback=receberTokenPreInterpretacaoRealtime' +
+        '&t=' +
+        Date.now();
+
+      script.onerror =
+        function () {
+
+          if (
+            timeoutTokenPreInterpretacao
+          ) {
+            clearTimeout(
+              timeoutTokenPreInterpretacao
+            );
+          }
+
+          resolverTokenPreInterpretacao =
+            null;
+
+          rejeitarTokenPreInterpretacao =
+            null;
+
+          reject(
+            new Error(
+              'Falha ao buscar o token da pré-interpretação.'
+            )
+          );
+
+          script.remove();
+        };
+
+      script.onload =
+        function () {
+          script.remove();
+        };
+
+      document.head.appendChild(
+        script
+      );
+
+      timeoutTokenPreInterpretacao =
+        setTimeout(
+          function () {
+
+            resolverTokenPreInterpretacao =
+              null;
+
+            rejeitarTokenPreInterpretacao =
+              null;
+
+            reject(
+              new Error(
+                'O token da pré-interpretação demorou demais para responder.'
+              )
+            );
+
+          },
+          15000
+        );
+    }
+  );
+}
+        function preInterpretacaoAindaValida() {
+  return (
+    conexaoPreInterpretacaoPronta &&
+    conexaoPreInterpretacao &&
+    canalPreInterpretacao &&
+    canalPreInterpretacao.readyState === 'open' &&
+    faixaMicrofone &&
+    faixaMicrofone.readyState === 'live'
+  );
+}
+
+
+async function prepararPreInterpretacao() {
+  if (preInterpretacaoAindaValida()) {
+    return;
+  }
+
+  if (preparandoPreInterpretacao) {
+    return preparandoPreInterpretacao;
+  }
+
+  preparandoPreInterpretacao =
+    (async function () {
+
+      /*
+       * O microfone já é obtido pela conexão
+       * principal. Não pedimos permissão novamente.
+       */
+      await obterMicrofone();
+
+      const dadosToken =
+        await solicitarTokenPreInterpretacao();
+
+      const pc =
+        new RTCPeerConnection();
+
+      const dc =
+        pc.createDataChannel(
+          'oai-events-pre'
+        );
+
+      /*
+       * A MESMA faixa do microfone
+       * alimenta esta segunda sessão.
+       */
+      pc.addTrack(
+        faixaMicrofone,
+        fluxoMicrofone
+      );
+
+
+      dc.addEventListener(
+        'message',
+        function (evento) {
+          try {
+            const dados =
+              JSON.parse(evento.data);
+
+            console.log(
+              '[PRE-INTERPRETACAO]',
+              dados
+            );
+
+          } catch (erro) {
+            console.error(
+              '[PRE-INTERPRETACAO] Evento inválido',
+              erro
+            );
+          }
+        }
+      );
+
+
+      pc.addEventListener(
+        'connectionstatechange',
+        function () {
+
+          console.log(
+            '[PRE-INTERPRETACAO] Estado:',
+            pc.connectionState
+          );
+
+          if (
+            pc.connectionState === 'failed' ||
+            pc.connectionState === 'closed'
+          ) {
+            conexaoPreInterpretacaoPronta =
+              false;
+          }
+        }
+      );
+
+
+      const oferta =
+        await pc.createOffer();
+
+      await pc.setLocalDescription(
+        oferta
+      );
+
+
+      const resposta =
+        await fetch(
+          URL_REALTIME,
+          {
+            method: 'POST',
+
+            headers: {
+              Authorization:
+                'Bearer ' +
+                dadosToken.token,
+
+              'Content-Type':
+                'application/sdp'
+            },
+
+            body: oferta.sdp
+          }
+        );
+
+
+      if (!resposta.ok) {
+        const erroTexto =
+          await resposta.text();
+
+        throw new Error(
+          'Falha ao conectar a pré-interpretação: ' +
+          erroTexto
+        );
+      }
+
+
+      const respostaSdp =
+        await resposta.text();
+
+
+      await pc.setRemoteDescription({
+        type: 'answer',
+        sdp: respostaSdp
+      });
+
+
+      await new Promise(
+        function (resolve, reject) {
+
+          if (
+            dc.readyState === 'open'
+          ) {
+            resolve();
+            return;
+          }
+
+          const limite =
+            setTimeout(
+              function () {
+                reject(
+                  new Error(
+                    'A conexão de pré-interpretação demorou demais para abrir.'
+                  )
+                );
+              },
+              10000
+            );
+
+
+          dc.addEventListener(
+            'open',
+            function () {
+              clearTimeout(limite);
+              resolve();
+            },
+            {
+              once: true
+            }
+          );
+        }
+      );
+
+
+      conexaoPreInterpretacao = pc;
+      canalPreInterpretacao = dc;
+      conexaoPreInterpretacaoPronta =
+        true;
+
+      console.log(
+        '[PRE-INTERPRETACAO] Conexão pronta'
+      );
+    })();
+
+
+  try {
+    await preparandoPreInterpretacao;
+
+  } finally {
+    preparandoPreInterpretacao = null;
+  }
+}
         timeoutToken =
           setTimeout(
             function () {
@@ -925,8 +1264,19 @@ window.addEventListener(
     try {
 const reutilizando =
   conexaoAindaValida();
-      await prepararConexao();
 
+const reutilizandoPre =
+  preInterpretacaoAindaValida();
+
+/*
+ * Primeiro garantimos a conexão principal.
+ * Depois garantimos a pré-interpretação.
+ * O microfone só é ativado quando as duas
+ * estiverem prontas.
+ */
+await prepararConexao();
+
+await prepararPreInterpretacao();
 
       /*
        * Da segunda vez em diante,
@@ -965,8 +1315,19 @@ mostrarMetricas(
   ' | Mic: ' +
   (diagnostico.microfone || '-') +
   ' | Conexão: ' +
-  (diagnostico.conexao || '-')
-);
+(diagnostico.conexao || '-') +
+' | Pré-IA: ' +
+(
+  conexaoPreInterpretacaoPronta
+    ? 'SIM'
+    : 'NÃO'
+) +
+' | Pré reutilizada: ' +
+(
+  reutilizandoPre
+    ? 'SIM'
+    : 'NÃO'
+)
 
       transcricaoElemento.textContent =
         'Ouvindo...';
