@@ -452,12 +452,13 @@ window.addEventListener(
   'message',
   function (evento) {
 
-    const origemValida =
-      evento.origin ===
-        'https://script.google.com' ||
-      evento.origin ===
-        'https://script.googleusercontent.com';
-
+   const origemValida =
+  evento.origin ===
+    'https://script.google.com' ||
+  evento.origin.endsWith(
+    '.googleusercontent.com'
+  );
+    
     if (!origemValida) {
       return;
     }
