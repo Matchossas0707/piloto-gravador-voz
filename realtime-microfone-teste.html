@@ -1,1 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
 
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Teste de microfone Realtime — Piloto</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #f4f6f8;
+      font-family: Arial, sans-serif;
+      color: #1f2937;
+    }
+
+    main {
+      width: min(100%, 650px);
+      background: white;
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow:
+        0 12px 32px
+        rgba(0, 0, 0, 0.10);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    p {
+      line-height: 1.5;
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 10px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      background: #f47b20;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #finalizar {
+      background: #374151;
+    }
+
+    #status,
+    #transcricao {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 12px;
+    }
+
+    #status {
+      background: #eef2f7;
+      white-space: pre-line;
+    }
+
+    #transcricao {
+      min-height: 120px;
+      background: #f8fafc;
+      border: 1px solid #dbe2ea;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    .sucesso {
+      background: #e8f7ed !important;
+      color: #176b34;
+    }
+
+    .erro {
+      background: #fdecec !important;
+      color: #9b1c1c;
+    }
+
+    small {
+      display: block;
+      margin-top: 15px;
+      color: #64748b;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Teste Realtime — Microfone</h1>
+
+    <p>
+      Inicie o teste, fale normalmente e depois
+      clique em finalizar.
+    </p>
+
+    <button id="iniciar" type="button">
+      Iniciar microfone
+    </button>
+
+    <button
+      id="finalizar"
+      type="button"
+      disabled
+    >
+      Finalizar atendimento
+    </button>
+
+    <div
+      id="status"
+      role="status"
+      aria-live="polite"
+    >
+      Aguardando início.
+    </div>
+
+    <h3>Transcrição</h3>
+
+    <div id="transcricao">
+      A transcrição aparecerá aqui.
+    </div>
+
+    <small>
+      Este teste apenas transcreve.
+      Nenhuma informação será enviada à planilha.
+    </small>
+  </main>
+
+  <script>
+    const URL_APPS_SCRIPT =
+      'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
+
+    const URL_REALTIME =
+      'https://api.openai.com/v1/realtime/calls';
+
+    const botaoIniciar =
+      document.getElementById('iniciar');
+
+    const botaoFinalizar =
+      document.getElementById('finalizar');
+
+    const statusElemento =
+      document.getElementById('status');
+
+    const transcricaoElemento =
+      document.getElementById('transcricao');
+
+    let conexao = null;
+    let canalDados = null;
+    let fluxoMicrofone = null;
+
+    let timeoutToken = null;
+
+    let textoParcial = '';
+    let finalizando = false;
+
+
+    function definirStatus(
+      mensagem,
+      tipo = ''
+    ) {
+      statusElemento.textContent =
+        mensagem;
+
+      statusElemento.className =
+        tipo;
+    }
+
+
+    function removerScriptToken() {
+      const anterior =
+        document.getElementById(
+          'tokenRealtimeMicrofone'
+        );
+
+      if (anterior) {
+        anterior.remove();
+      }
+    }
+
+
+    function pararMicrofone() {
+      if (!fluxoMicrofone) {
+        return;
+      }
+
+      fluxoMicrofone
+        .getTracks()
+        .forEach(function (track) {
+          track.stop();
+        });
+
+      fluxoMicrofone = null;
+    }
+
+
+    function fecharConexao() {
+      pararMicrofone();
+
+      if (canalDados) {
+        try {
+          canalDados.close();
+        } catch (erro) {
+        }
+
+        canalDados = null;
+      }
+
+      if (conexao) {
+        try {
+          conexao.close();
+        } catch (erro) {
+        }
+
+        conexao = null;
+      }
+    }
+
+
+    function falhar(mensagem) {
+      definirStatus(
+        mensagem,
+        'erro'
+      );
+
+      botaoIniciar.disabled = false;
+      botaoFinalizar.disabled = true;
+
+      finalizando = false;
+
+      fecharConexao();
+    }
+
+
+    function tratarEventoRealtime(evento) {
+      console.log(
+        '[REALTIME]',
+        evento
+      );
+
+      if (
+        evento.type ===
+        'conversation.item.input_audio_transcription.delta'
+      ) {
+        const delta =
+          String(evento.delta || '');
+
+        textoParcial += delta;
+
+        transcricaoElemento.textContent =
+          textoParcial ||
+          'Ouvindo...';
+
+        definirStatus(
+          'Ouvindo e transcrevendo em tempo real...'
+        );
+
+        return;
+      }
+
+
+      if (
+        evento.type ===
+        'conversation.item.input_audio_transcription.completed'
+      ) {
+        const textoFinal =
+          String(
+            evento.transcript ||
+            textoParcial ||
+            ''
+          ).trim();
+
+        if (textoFinal) {
+          transcricaoElemento.textContent =
+            textoFinal;
+        }
+
+        definirStatus(
+          'Transcrição concluída!',
+          'sucesso'
+        );
+
+        botaoIniciar.disabled = false;
+        botaoFinalizar.disabled = true;
+
+        finalizando = false;
+
+        pararMicrofone();
+
+        setTimeout(
+          fecharConexao,
+          800
+        );
+
+        return;
+      }
+
+
+      if (evento.type === 'error') {
+        const mensagem =
+          evento.error &&
+          evento.error.message
+            ? evento.error.message
+            : 'A OpenAI retornou um erro.';
+
+        falhar(
+          'Erro Realtime:\n' +
+          mensagem
+        );
+      }
+    }
+
+
+    async function conectarRealtime(token) {
+      try {
+        definirStatus(
+          'Credencial recebida.\nConectando ao Realtime...'
+        );
+
+        conexao =
+          new RTCPeerConnection();
+
+
+        fluxoMicrofone
+          .getTracks()
+          .forEach(function (track) {
+            conexao.addTrack(
+              track,
+              fluxoMicrofone
+            );
+          });
+
+
+        canalDados =
+          conexao.createDataChannel(
+            'oai-events'
+          );
+
+
+        canalDados.addEventListener(
+          'open',
+          function () {
+            definirStatus(
+              'Microfone conectado!\nPode começar a falar.',
+              'sucesso'
+            );
+
+            botaoFinalizar.disabled = false;
+          }
+        );
+
+
+        canalDados.addEventListener(
+          'message',
+          function (mensagem) {
+            try {
+              tratarEventoRealtime(
+                JSON.parse(
+                  mensagem.data
+                )
+              );
+            } catch (erro) {
+              console.error(
+                'Evento inválido:',
+                mensagem.data
+              );
+            }
+          }
+        );
+
+
+        const oferta =
+          await conexao.createOffer();
+
+        await conexao.setLocalDescription(
+          oferta
+        );
+
+
+        const resposta =
+          await fetch(
+            URL_REALTIME,
+            {
+              method: 'POST',
+
+              headers: {
+                Authorization:
+                  'Bearer ' + token,
+
+                'Content-Type':
+                  'application/sdp'
+              },
+
+              body: oferta.sdp
+            }
+          );
+
+
+        if (!resposta.ok) {
+          const detalhe =
+            await resposta.text();
+
+          throw new Error(
+            'HTTP ' +
+            resposta.status +
+            ': ' +
+            detalhe
+          );
+        }
+
+
+        const respostaSDP =
+          await resposta.text();
+
+
+        await conexao.setRemoteDescription({
+          type: 'answer',
+          sdp: respostaSDP
+        });
+
+      } catch (erro) {
+        falhar(
+          'Não foi possível conectar ao Realtime.\n' +
+          (
+            erro && erro.message
+              ? erro.message
+              : String(erro)
+          )
+        );
+      }
+    }
+
+
+    window.receberTokenRealtimeMicrofone =
+      function (dados) {
+
+        if (timeoutToken) {
+          clearTimeout(timeoutToken);
+          timeoutToken = null;
+        }
+
+        removerScriptToken();
+
+        if (
+          !dados ||
+          dados.sucesso !== true ||
+          !dados.token
+        ) {
+          falhar(
+            'Não foi possível receber a credencial.\n' +
+            (
+              dados && dados.erro
+                ? dados.erro
+                : 'Resposta inválida.'
+            )
+          );
+
+          return;
+        }
+
+        conectarRealtime(
+          dados.token
+        );
+      };
+
+
+    function solicitarToken() {
+      removerScriptToken();
+
+      const script =
+        document.createElement(
+          'script'
+        );
+
+      script.id =
+        'tokenRealtimeMicrofone';
+
+      script.src =
+        URL_APPS_SCRIPT +
+        '?acao=tokenRealtimeTeste' +
+        '&callback=receberTokenRealtimeMicrofone' +
+        '&_=' +
+        Date.now();
+
+
+      script.onerror =
+        function () {
+          falhar(
+            'Não foi possível receber a credencial do Apps Script.'
+          );
+        };
+
+
+      timeoutToken =
+        setTimeout(
+          function () {
+            falhar(
+              'O Apps Script não respondeu dentro do tempo esperado.'
+            );
+          },
+          15000
+        );
+
+
+      document.head.appendChild(
+        script
+      );
+    }
+
+
+    async function iniciar() {
+      fecharConexao();
+
+      textoParcial = '';
+      finalizando = false;
+
+      transcricaoElemento.textContent =
+        'Preparando microfone...';
+
+      botaoIniciar.disabled = true;
+      botaoFinalizar.disabled = true;
+
+      definirStatus(
+        'Solicitando acesso ao microfone...'
+      );
+
+
+      try {
+        fluxoMicrofone =
+          await navigator.mediaDevices
+            .getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
+            });
+
+        definirStatus(
+          'Microfone autorizado.\nSolicitando credencial...'
+        );
+
+        solicitarToken();
+
+      } catch (erro) {
+        falhar(
+          'Não foi possível acessar o microfone.\n' +
+          (
+            erro && erro.message
+              ? erro.message
+              : String(erro)
+          )
+        );
+      }
+    }
+
+
+    function finalizar() {
+      if (
+        !canalDados ||
+        canalDados.readyState !== 'open' ||
+        finalizando
+      ) {
+        return;
+      }
+
+      finalizando = true;
+
+      botaoFinalizar.disabled = true;
+
+      definirStatus(
+        'Finalizando fala e aguardando a transcrição...'
+      );
+
+
+      canalDados.send(
+        JSON.stringify({
+          type:
+            'input_audio_buffer.commit'
+        })
+      );
+
+
+      pararMicrofone();
+    }
+
+
+    botaoIniciar.addEventListener(
+      'click',
+      iniciar
+    );
+
+
+    botaoFinalizar.addEventListener(
+      'click',
+      finalizar
+    );
+  </script>
+</body>
+</html>
