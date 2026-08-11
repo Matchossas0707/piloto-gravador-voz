@@ -146,475 +146,746 @@
     </small>
   </main>
 
-  <script>
-    const URL_APPS_SCRIPT =
-      'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
+ <script>
+  const URL_APPS_SCRIPT =
+    'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec';
 
-    const URL_REALTIME =
-      'https://api.openai.com/v1/realtime/calls';
+  const URL_REALTIME =
+    'https://api.openai.com/v1/realtime/calls';
 
-    const botaoIniciar =
-      document.getElementById('iniciar');
+  const botaoIniciar =
+    document.getElementById('iniciar');
 
-    const botaoFinalizar =
-      document.getElementById('finalizar');
+  const botaoFinalizar =
+    document.getElementById('finalizar');
 
-    const statusElemento =
-      document.getElementById('status');
+  const statusElemento =
+    document.getElementById('status');
 
-    const transcricaoElemento =
-      document.getElementById('transcricao');
-
-    let conexao = null;
-    let canalDados = null;
-    let fluxoMicrofone = null;
-
-    let timeoutToken = null;
-
-    let textoParcial = '';
-    let finalizando = false;
+  const transcricaoElemento =
+    document.getElementById('transcricao');
 
 
-    function definirStatus(
-      mensagem,
-      tipo = ''
-    ) {
-      statusElemento.textContent =
-        mensagem;
+  const metricasElemento =
+    document.createElement('div');
 
-      statusElemento.className =
-        tipo;
+  metricasElemento.style.marginTop = '10px';
+  metricasElemento.style.fontSize = '13px';
+  metricasElemento.style.color = '#64748b';
+
+  statusElemento.after(metricasElemento);
+
+
+  let conexao = null;
+  let canalDados = null;
+
+  let fluxoMicrofone = null;
+  let faixaMicrofone = null;
+
+  let conexaoPronta = false;
+  let preparandoConexao = null;
+
+  let atendimentoAtivo = false;
+  let finalizando = false;
+
+  let textoParcial = '';
+
+  let inicioClique = 0;
+  let inicioFinalizacao = 0;
+
+  let primeiraDeltaRecebida = false;
+
+  let timeoutToken = null;
+  let resolverToken = null;
+  let rejeitarToken = null;
+
+
+  function definirStatus(
+    mensagem,
+    tipo = ''
+  ) {
+    statusElemento.textContent = mensagem;
+    statusElemento.className = tipo;
+  }
+
+
+  function mostrarMetricas(texto) {
+    metricasElemento.textContent = texto;
+  }
+
+
+  function removerScriptToken() {
+    const anterior =
+      document.getElementById(
+        'tokenRealtimeMicrofone'
+      );
+
+    if (anterior) {
+      anterior.remove();
+    }
+  }
+
+
+  function silenciarMicrofone() {
+    if (faixaMicrofone) {
+      faixaMicrofone.enabled = false;
+    }
+  }
+
+
+  function ativarMicrofone() {
+    if (faixaMicrofone) {
+      faixaMicrofone.enabled = true;
+    }
+  }
+
+
+  function microfoneDisponivel() {
+    return (
+      faixaMicrofone &&
+      faixaMicrofone.readyState === 'live'
+    );
+  }
+
+
+  async function obterMicrofone() {
+    if (microfoneDisponivel()) {
+      return fluxoMicrofone;
     }
 
+    fluxoMicrofone =
+      await navigator.mediaDevices
+        .getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
 
-    function removerScriptToken() {
-      const anterior =
-        document.getElementById(
-          'tokenRealtimeMicrofone'
-        );
+    faixaMicrofone =
+      fluxoMicrofone.getAudioTracks()[0];
 
-      if (anterior) {
-        anterior.remove();
+    /*
+     * O microfone fica preparado,
+     * mas não grava até o atendimento começar.
+     */
+    silenciarMicrofone();
+
+    return fluxoMicrofone;
+  }
+
+
+  window.receberTokenRealtimeMicrofone =
+    function (dados) {
+
+      if (timeoutToken) {
+        clearTimeout(timeoutToken);
+        timeoutToken = null;
       }
-    }
 
+      removerScriptToken();
 
-    function pararMicrofone() {
-      if (!fluxoMicrofone) {
+      if (
+        !dados ||
+        dados.sucesso !== true ||
+        !dados.token
+      ) {
+        if (rejeitarToken) {
+          rejeitarToken(
+            new Error(
+              dados && dados.erro
+                ? dados.erro
+                : 'Resposta de credencial inválida.'
+            )
+          );
+        }
+
         return;
       }
 
-      fluxoMicrofone
-        .getTracks()
-        .forEach(function (track) {
-          track.stop();
+      if (resolverToken) {
+        resolverToken({
+          token: dados.token,
+          recebidoEm: Date.now()
         });
+      }
+    };
 
-      fluxoMicrofone = null;
+
+  function solicitarToken() {
+    return new Promise(
+      function (resolve, reject) {
+
+        resolverToken = resolve;
+        rejeitarToken = reject;
+
+        removerScriptToken();
+
+        const script =
+          document.createElement('script');
+
+        script.id =
+          'tokenRealtimeMicrofone';
+
+        script.src =
+          URL_APPS_SCRIPT +
+          '?acao=tokenRealtimeTeste' +
+          '&callback=receberTokenRealtimeMicrofone' +
+          '&_=' +
+          Date.now();
+
+        script.onerror =
+          function () {
+            reject(
+              new Error(
+                'Não foi possível receber a credencial do Apps Script.'
+              )
+            );
+          };
+
+        timeoutToken =
+          setTimeout(
+            function () {
+              reject(
+                new Error(
+                  'O Apps Script demorou demais para responder.'
+                )
+              );
+            },
+            15000
+          );
+
+        document.head.appendChild(script);
+      }
+    );
+  }
+
+
+  function tratarEventoRealtime(evento) {
+    console.log(
+      '[REALTIME]',
+      evento
+    );
+
+
+    if (
+      evento.type ===
+      'conversation.item.input_audio_transcription.delta'
+    ) {
+      const delta =
+        String(evento.delta || '');
+
+      textoParcial += delta;
+
+      transcricaoElemento.textContent =
+        textoParcial || 'Ouvindo...';
+
+
+      if (!primeiraDeltaRecebida) {
+        primeiraDeltaRecebida = true;
+
+        const tempo =
+          Math.round(
+            performance.now() -
+            inicioClique
+          );
+
+        mostrarMetricas(
+          'Clique → primeiro texto: ' +
+          tempo +
+          ' ms'
+        );
+      }
+
+      return;
     }
 
 
-    function fecharConexao() {
-      pararMicrofone();
+    if (
+      evento.type ===
+      'conversation.item.input_audio_transcription.completed'
+    ) {
+      const textoFinal =
+        String(
+          evento.transcript ||
+          textoParcial ||
+          ''
+        ).trim();
 
-      if (canalDados) {
-        try {
-          canalDados.close();
-        } catch (erro) {
-        }
 
-        canalDados = null;
+      if (textoFinal) {
+        transcricaoElemento.textContent =
+          textoFinal;
       }
 
-      if (conexao) {
-        try {
-          conexao.close();
-        } catch (erro) {
-        }
 
-        conexao = null;
-      }
-    }
+      const tempoFinalizacao =
+        inicioFinalizacao
+          ? Math.round(
+              performance.now() -
+              inicioFinalizacao
+            )
+          : 0;
 
 
-    function falhar(mensagem) {
       definirStatus(
-        mensagem,
-        'erro'
+        'Transcrição concluída! Sistema pronto para o próximo atendimento.',
+        'sucesso'
       );
+
+
+      mostrarMetricas(
+        'Finalizar → transcrição pronta: ' +
+        tempoFinalizacao +
+        ' ms'
+      );
+
+
+      atendimentoAtivo = false;
+      finalizando = false;
 
       botaoIniciar.disabled = false;
       botaoFinalizar.disabled = true;
 
-      finalizando = false;
+      /*
+       * NÃO fechamos a conexão.
+       * NÃO destruímos o microfone.
+       *
+       * Ele permanece preparado,
+       * apenas silenciado.
+       */
+      silenciarMicrofone();
 
-      fecharConexao();
+      return;
     }
 
 
-    function tratarEventoRealtime(evento) {
-      console.log(
-        '[REALTIME]',
-        evento
+    if (evento.type === 'error') {
+      const mensagem =
+        evento.error &&
+        evento.error.message
+          ? evento.error.message
+          : 'A OpenAI retornou um erro.';
+
+      falhar(
+        'Erro Realtime:\n' +
+        mensagem
+      );
+    }
+  }
+
+
+  function conexaoAindaValida() {
+    return (
+      conexaoPronta &&
+      conexao &&
+      canalDados &&
+      canalDados.readyState === 'open' &&
+      microfoneDisponivel()
+    );
+  }
+
+
+  async function criarConexaoRealtime(
+    token
+  ) {
+    conexao =
+      new RTCPeerConnection();
+
+
+    conexao.addEventListener(
+      'connectionstatechange',
+      function () {
+        if (
+          conexao.connectionState ===
+            'failed' ||
+          conexao.connectionState ===
+            'closed'
+        ) {
+          conexaoPronta = false;
+        }
+      }
+    );
+
+
+    conexao.addTrack(
+      faixaMicrofone,
+      fluxoMicrofone
+    );
+
+
+    canalDados =
+      conexao.createDataChannel(
+        'oai-events'
       );
 
-      if (
-        evento.type ===
-        'conversation.item.input_audio_transcription.delta'
-      ) {
-        const delta =
-          String(evento.delta || '');
 
-        textoParcial += delta;
-
-        transcricaoElemento.textContent =
-          textoParcial ||
-          'Ouvindo...';
-
-        definirStatus(
-          'Ouvindo e transcrevendo em tempo real...'
-        );
-
-        return;
-      }
-
-
-      if (
-        evento.type ===
-        'conversation.item.input_audio_transcription.completed'
-      ) {
-        const textoFinal =
-          String(
-            evento.transcript ||
-            textoParcial ||
-            ''
-          ).trim();
-
-        if (textoFinal) {
-          transcricaoElemento.textContent =
-            textoFinal;
-        }
-
-        definirStatus(
-          'Transcrição concluída!',
-          'sucesso'
-        );
-
-        botaoIniciar.disabled = false;
-        botaoFinalizar.disabled = true;
-
-        finalizando = false;
-
-        pararMicrofone();
-
-        setTimeout(
-          fecharConexao,
-          800
-        );
-
-        return;
-      }
-
-
-      if (evento.type === 'error') {
-        const mensagem =
-          evento.error &&
-          evento.error.message
-            ? evento.error.message
-            : 'A OpenAI retornou um erro.';
-
-        falhar(
-          'Erro Realtime:\n' +
-          mensagem
-        );
-      }
-    }
-
-
-    async function conectarRealtime(token) {
-      try {
-        definirStatus(
-          'Credencial recebida.\nConectando ao Realtime...'
-        );
-
-        conexao =
-          new RTCPeerConnection();
-
-
-        fluxoMicrofone
-          .getTracks()
-          .forEach(function (track) {
-            conexao.addTrack(
-              track,
-              fluxoMicrofone
-            );
-          });
-
-
-        canalDados =
-          conexao.createDataChannel(
-            'oai-events'
-          );
-
-
-        canalDados.addEventListener(
-          'open',
-          function () {
-            definirStatus(
-              'Microfone conectado!\nPode começar a falar.',
-              'sucesso'
-            );
-
-            botaoFinalizar.disabled = false;
-          }
-        );
-
-
-        canalDados.addEventListener(
-          'message',
-          function (mensagem) {
-            try {
-              tratarEventoRealtime(
-                JSON.parse(
-                  mensagem.data
-                )
-              );
-            } catch (erro) {
-              console.error(
-                'Evento inválido:',
-                mensagem.data
-              );
-            }
-          }
-        );
-
-
-        const oferta =
-          await conexao.createOffer();
-
-        await conexao.setLocalDescription(
-          oferta
-        );
-
-
-        const resposta =
-          await fetch(
-            URL_REALTIME,
-            {
-              method: 'POST',
-
-              headers: {
-                Authorization:
-                  'Bearer ' + token,
-
-                'Content-Type':
-                  'application/sdp'
-              },
-
-              body: oferta.sdp
-            }
-          );
-
-
-        if (!resposta.ok) {
-          const detalhe =
-            await resposta.text();
-
-          throw new Error(
-            'HTTP ' +
-            resposta.status +
-            ': ' +
-            detalhe
-          );
-        }
-
-
-        const respostaSDP =
-          await resposta.text();
-
-
-        await conexao.setRemoteDescription({
-          type: 'answer',
-          sdp: respostaSDP
-        });
-
-      } catch (erro) {
-        falhar(
-          'Não foi possível conectar ao Realtime.\n' +
-          (
-            erro && erro.message
-              ? erro.message
-              : String(erro)
-          )
-        );
-      }
-    }
-
-
-    window.receberTokenRealtimeMicrofone =
-      function (dados) {
-
-        if (timeoutToken) {
-          clearTimeout(timeoutToken);
-          timeoutToken = null;
-        }
-
-        removerScriptToken();
-
-        if (
-          !dados ||
-          dados.sucesso !== true ||
-          !dados.token
-        ) {
-          falhar(
-            'Não foi possível receber a credencial.\n' +
-            (
-              dados && dados.erro
-                ? dados.erro
-                : 'Resposta inválida.'
+    canalDados.addEventListener(
+      'message',
+      function (mensagem) {
+        try {
+          tratarEventoRealtime(
+            JSON.parse(
+              mensagem.data
             )
           );
-
-          return;
-        }
-
-        conectarRealtime(
-          dados.token
-        );
-      };
-
-
-    function solicitarToken() {
-      removerScriptToken();
-
-      const script =
-        document.createElement(
-          'script'
-        );
-
-      script.id =
-        'tokenRealtimeMicrofone';
-
-      script.src =
-        URL_APPS_SCRIPT +
-        '?acao=tokenRealtimeTeste' +
-        '&callback=receberTokenRealtimeMicrofone' +
-        '&_=' +
-        Date.now();
-
-
-      script.onerror =
-        function () {
-          falhar(
-            'Não foi possível receber a credencial do Apps Script.'
+        } catch (erro) {
+          console.error(
+            'Evento inválido:',
+            mensagem.data
           );
-        };
+        }
+      }
+    );
 
 
-      timeoutToken =
-        setTimeout(
-          function () {
-            falhar(
-              'O Apps Script não respondeu dentro do tempo esperado.'
-            );
+    const canalAberto =
+      new Promise(
+        function (resolve, reject) {
+
+          canalDados.addEventListener(
+            'open',
+            function () {
+              conexaoPronta = true;
+              resolve();
+            },
+            { once: true }
+          );
+
+
+          canalDados.addEventListener(
+            'error',
+            function () {
+              reject(
+                new Error(
+                  'Falha ao abrir o canal Realtime.'
+                )
+              );
+            },
+            { once: true }
+          );
+        }
+      );
+
+
+    const oferta =
+      await conexao.createOffer();
+
+
+    await conexao.setLocalDescription(
+      oferta
+    );
+
+
+    const resposta =
+      await fetch(
+        URL_REALTIME,
+        {
+          method: 'POST',
+
+          headers: {
+            Authorization:
+              'Bearer ' + token,
+
+            'Content-Type':
+              'application/sdp'
           },
-          15000
-        );
+
+          body: oferta.sdp
+        }
+      );
 
 
-      document.head.appendChild(
-        script
+    if (!resposta.ok) {
+      const detalhe =
+        await resposta.text();
+
+      throw new Error(
+        'HTTP ' +
+        resposta.status +
+        ': ' +
+        detalhe
       );
     }
 
 
-    async function iniciar() {
-      fecharConexao();
-
-      textoParcial = '';
-      finalizando = false;
-
-      transcricaoElemento.textContent =
-        'Preparando microfone...';
-
-      botaoIniciar.disabled = true;
-      botaoFinalizar.disabled = true;
-
-      definirStatus(
-        'Solicitando acesso ao microfone...'
-      );
+    const respostaSDP =
+      await resposta.text();
 
 
-      try {
-        fluxoMicrofone =
-          await navigator.mediaDevices
-            .getUserMedia({
-              audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              }
-            });
+    await conexao.setRemoteDescription({
+      type: 'answer',
+      sdp: respostaSDP
+    });
+
+
+    await canalAberto;
+  }
+
+
+  async function prepararConexao() {
+    if (conexaoAindaValida()) {
+      return;
+    }
+
+
+    if (preparandoConexao) {
+      return preparandoConexao;
+    }
+
+
+    preparandoConexao =
+      (async function () {
 
         definirStatus(
-          'Microfone autorizado.\nSolicitando credencial...'
+          'Preparando microfone e conexão...'
         );
 
-        solicitarToken();
 
-      } catch (erro) {
-        falhar(
-          'Não foi possível acessar o microfone.\n' +
-          (
-            erro && erro.message
-              ? erro.message
-              : String(erro)
-          )
+        /*
+         * PONTO PRINCIPAL DA V2:
+         *
+         * microfone e token são solicitados
+         * AO MESMO TEMPO.
+         */
+        const resultados =
+          await Promise.all([
+            obterMicrofone(),
+            solicitarToken()
+          ]);
+
+
+        let credencial =
+          resultados[1];
+
+
+        /*
+         * Se a pessoa demorou demais
+         * na autorização do microfone,
+         * busca uma credencial nova.
+         */
+        if (
+          Date.now() -
+            credencial.recebidoEm >
+          45000
+        ) {
+          credencial =
+            await solicitarToken();
+        }
+
+
+        await criarConexaoRealtime(
+          credencial.token
         );
-      }
+
+      })();
+
+
+    try {
+      await preparandoConexao;
+    } finally {
+      preparandoConexao = null;
+    }
+  }
+
+
+  async function iniciar() {
+    if (
+      atendimentoAtivo ||
+      finalizando
+    ) {
+      return;
     }
 
 
-    function finalizar() {
-      if (
-        !canalDados ||
-        canalDados.readyState !== 'open' ||
-        finalizando
-      ) {
-        return;
-      }
+    inicioClique =
+      performance.now();
 
-      finalizando = true;
+    inicioFinalizacao = 0;
 
-      botaoFinalizar.disabled = true;
+    textoParcial = '';
+
+    primeiraDeltaRecebida = false;
+
+
+    transcricaoElemento.textContent =
+      'Preparando atendimento...';
+
+
+    botaoIniciar.disabled = true;
+    botaoFinalizar.disabled = true;
+
+
+    mostrarMetricas('');
+
+
+    try {
+
+      await prepararConexao();
+
+
+      /*
+       * Da segunda vez em diante,
+       * chegaremos praticamente direto aqui.
+       */
+      ativarMicrofone();
+
+
+      atendimentoAtivo = true;
+
+
+      const tempoPronto =
+        Math.round(
+          performance.now() -
+          inicioClique
+        );
+
 
       definirStatus(
-        'Finalizando fala e aguardando a transcrição...'
+        'Gravando. Pode falar normalmente.',
+        'sucesso'
       );
 
 
-      canalDados.send(
-        JSON.stringify({
-          type:
-            'input_audio_buffer.commit'
-        })
+      mostrarMetricas(
+        'Clique → microfone pronto: ' +
+        tempoPronto +
+        ' ms'
       );
 
 
-      pararMicrofone();
+      transcricaoElemento.textContent =
+        'Ouvindo...';
+
+
+      botaoFinalizar.disabled = false;
+
+    } catch (erro) {
+
+      falhar(
+        'Não foi possível iniciar.\n' +
+        (
+          erro && erro.message
+            ? erro.message
+            : String(erro)
+        )
+      );
+    }
+  }
+
+
+  function finalizar() {
+    if (
+      !atendimentoAtivo ||
+      finalizando ||
+      !canalDados ||
+      canalDados.readyState !== 'open'
+    ) {
+      return;
     }
 
 
-    botaoIniciar.addEventListener(
-      'click',
-      iniciar
+    finalizando = true;
+    atendimentoAtivo = false;
+
+
+    /*
+     * Para de mandar áudio imediatamente.
+     * A conexão continua aberta.
+     */
+    silenciarMicrofone();
+
+
+    inicioFinalizacao =
+      performance.now();
+
+
+    botaoFinalizar.disabled = true;
+
+
+    definirStatus(
+      'Finalizando atendimento...'
     );
 
 
-    botaoFinalizar.addEventListener(
-      'click',
-      finalizar
+    canalDados.send(
+      JSON.stringify({
+        type:
+          'input_audio_buffer.commit'
+      })
     );
-  </script>
-</body>
-</html>
+  }
+
+
+  function falhar(mensagem) {
+    atendimentoAtivo = false;
+    finalizando = false;
+
+    silenciarMicrofone();
+
+    definirStatus(
+      mensagem,
+      'erro'
+    );
+
+    botaoIniciar.disabled = false;
+    botaoFinalizar.disabled = true;
+
+    conexaoPronta = false;
+
+
+    if (canalDados) {
+      try {
+        canalDados.close();
+      } catch (erro) {
+      }
+
+      canalDados = null;
+    }
+
+
+    if (conexao) {
+      try {
+        conexao.close();
+      } catch (erro) {
+      }
+
+      conexao = null;
+    }
+  }
+
+
+  botaoIniciar.addEventListener(
+    'click',
+    iniciar
+  );
+
+
+  botaoFinalizar.addEventListener(
+    'click',
+    finalizar
+  );
+
+
+  window.addEventListener(
+    'pagehide',
+    function () {
+
+      if (fluxoMicrofone) {
+        fluxoMicrofone
+          .getTracks()
+          .forEach(
+            function (track) {
+              track.stop();
+            }
+          );
+      }
+
+
+      if (conexao) {
+        conexao.close();
+      }
+    }
+  );
+</script>
