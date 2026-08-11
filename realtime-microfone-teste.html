@@ -476,15 +476,39 @@
   }
 
 
-  function conexaoAindaValida() {
-    return (
-      conexaoPronta &&
-      conexao &&
-      canalDados &&
-      canalDados.readyState === 'open' &&
-      microfoneDisponivel()
-    );
-  }
+ function conexaoAindaValida() {
+  const diagnostico = {
+    conexaoPronta: conexaoPronta,
+    canal:
+      canalDados
+        ? canalDados.readyState
+        : 'inexistente',
+    microfone:
+      faixaMicrofone
+        ? faixaMicrofone.readyState
+        : 'inexistente',
+    conexao:
+      conexao
+        ? conexao.connectionState
+        : 'inexistente'
+  };
+
+  console.log(
+    '[REUTILIZACAO]',
+    diagnostico
+  );
+
+  window.ultimoDiagnostico =
+    diagnostico;
+
+  return (
+    conexaoPronta &&
+    conexao &&
+    canalDados &&
+    canalDados.readyState === 'open' &&
+    microfoneDisponivel()
+  );
+}
 
 
   async function criarConexaoRealtime(
