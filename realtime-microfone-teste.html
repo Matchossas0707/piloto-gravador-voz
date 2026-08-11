@@ -745,7 +745,8 @@
 
 
     try {
-
+const reutilizando =
+  conexaoAindaValida();
       await prepararConexao();
 
 
@@ -772,12 +773,22 @@
       );
 
 
-      mostrarMetricas(
-        'Clique → microfone pronto: ' +
-        tempoPronto +
-        ' ms'
-      );
+     const diagnostico =
+  window.ultimoDiagnostico || {};
 
+mostrarMetricas(
+  'Clique → microfone pronto: ' +
+  tempoPronto +
+  ' ms | ' +
+  'Reutilizou: ' +
+  (reutilizando ? 'SIM' : 'NÃO') +
+  ' | Canal: ' +
+  (diagnostico.canal || '-') +
+  ' | Mic: ' +
+  (diagnostico.microfone || '-') +
+  ' | Conexão: ' +
+  (diagnostico.conexao || '-')
+);
 
       transcricaoElemento.textContent =
         'Ouvindo...';
