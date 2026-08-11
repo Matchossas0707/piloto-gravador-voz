@@ -636,52 +636,7 @@ window.addEventListener(
 }
 
 
-      if (textoFinal) {
-        transcricaoElemento.textContent =
-          textoFinal;
-      }
-
-
-      const tempoFinalizacao =
-        inicioFinalizacao
-          ? Math.round(
-              performance.now() -
-              inicioFinalizacao
-            )
-          : 0;
-
-
-      definirStatus(
-        'Transcrição concluída! Sistema pronto para o próximo atendimento.',
-        'sucesso'
-      );
-
-
-      mostrarMetricas(
-        'Finalizar → transcrição pronta: ' +
-        tempoFinalizacao +
-        ' ms'
-      );
-
-
-      atendimentoAtivo = false;
-      finalizando = false;
-
-      botaoIniciar.disabled = false;
-      botaoFinalizar.disabled = true;
-
-      /*
-       * NÃO fechamos a conexão.
-       * NÃO destruímos o microfone.
-       *
-       * Ele permanece preparado,
-       * apenas silenciado.
-       */
-      silenciarMicrofone();
-
-      return;
-    }
-
+      
 
     if (evento.type === 'error') {
       const mensagem =
