@@ -181,7 +181,11 @@
 
   let fluxoMicrofone = null;
   let faixaMicrofone = null;
-
+   
+let cadastroEmAndamento = false;
+let iframeCadastroAtual = null;
+let timeoutCadastro = null;
+   
   let conexaoPronta = false;
   let preparandoConexao = null;
 
@@ -361,7 +365,186 @@
     );
   }
 
+function enviarCadastroRealtime(texto) {
+  if (
+    !texto ||
+    cadastroEmAndamento
+  ) {
+    return;
+  }
 
+  cadastroEmAndamento = true;
+
+  definirStatus(
+    'Transcrição pronta. Interpretando e cadastrando...'
+  );
+
+  const nomeIframe =
+    'pilotoCadastro_' + Date.now();
+
+  iframeCadastroAtual =
+    document.createElement('iframe');
+
+  iframeCadastroAtual.name =
+    nomeIframe;
+
+  iframeCadastroAtual.style.display =
+    'none';
+
+  document.body.appendChild(
+    iframeCadastroAtual
+  );
+
+
+  const formulario =
+    document.createElement('form');
+
+  formulario.method = 'POST';
+  formulario.action = URL_APPS_SCRIPT;
+  formulario.target = nomeIframe;
+  formulario.style.display = 'none';
+
+
+  const campos = {
+    acao: 'processar_realtime',
+    texto: texto
+  };
+
+
+  Object.keys(campos).forEach(
+    function (nome) {
+      const input =
+        document.createElement('input');
+
+      input.type = 'hidden';
+      input.name = nome;
+      input.value = campos[nome];
+
+      formulario.appendChild(input);
+    }
+  );
+
+
+  document.body.appendChild(formulario);
+
+  formulario.submit();
+  formulario.remove();
+
+
+  timeoutCadastro =
+    setTimeout(
+      function () {
+        cadastroEmAndamento = false;
+
+        definirStatus(
+          'O cadastro demorou mais que o esperado.',
+          'erro'
+        );
+
+        botaoIniciar.disabled = false;
+      },
+      30000
+    );
+}
+
+
+window.addEventListener(
+  'message',
+  function (evento) {
+
+    const origemValida =
+      evento.origin ===
+        'https://script.google.com' ||
+      evento.origin ===
+        'https://script.googleusercontent.com';
+
+    if (!origemValida) {
+      return;
+    }
+
+
+    const dados = evento.data;
+
+    if (
+      !dados ||
+      dados.tipo !==
+        'PILOTO_REALTIME_RESULTADO'
+    ) {
+      return;
+    }
+
+
+    if (timeoutCadastro) {
+      clearTimeout(timeoutCadastro);
+      timeoutCadastro = null;
+    }
+
+
+    cadastroEmAndamento = false;
+
+
+    if (iframeCadastroAtual) {
+      iframeCadastroAtual.remove();
+      iframeCadastroAtual = null;
+    }
+
+
+    if (dados.sucesso !== true) {
+      definirStatus(
+        'Erro no cadastro:\n' +
+        (
+          dados.erro ||
+          'Erro não identificado.'
+        ),
+        'erro'
+      );
+
+      botaoIniciar.disabled = false;
+      botaoFinalizar.disabled = true;
+
+      finalizando = false;
+
+      return;
+    }
+
+
+    const tempoFinalPlanilha =
+      inicioFinalizacao
+        ? Math.round(
+            performance.now() -
+            inicioFinalizacao
+          )
+        : 0;
+
+
+    definirStatus(
+      'Cadastro concluído! ' +
+      dados.cadastro.quantidade +
+      ' aluno(s) inserido(s) na planilha.',
+      'sucesso'
+    );
+
+
+    mostrarMetricas(
+      'Finalizar → planilha: ' +
+      tempoFinalPlanilha +
+      ' ms | IA: ' +
+      dados.metricas.interpretacaoMs +
+      ' ms | Planilha: ' +
+      dados.metricas.planilhaMs +
+      ' ms'
+    );
+
+
+    atendimentoAtivo = false;
+    finalizando = false;
+
+    botaoIniciar.disabled = false;
+    botaoFinalizar.disabled = true;
+
+    silenciarMicrofone();
+  }
+);
   function tratarEventoRealtime(evento) {
     console.log(
       '[REALTIME]',
@@ -402,16 +585,55 @@
     }
 
 
-    if (
-      evento.type ===
-      'conversation.item.input_audio_transcription.completed'
-    ) {
-      const textoFinal =
-        String(
-          evento.transcript ||
-          textoParcial ||
-          ''
-        ).trim();
+   if (
+  evento.type ===
+  'conversation.item.input_audio_transcription.completed'
+) {
+  const textoFinal =
+    String(
+      evento.transcript ||
+      textoParcial ||
+      ''
+    ).trim();
+
+
+  if (textoFinal) {
+    transcricaoElemento.textContent =
+      textoFinal;
+  }
+
+
+  const tempoTranscricao =
+    inicioFinalizacao
+      ? Math.round(
+          performance.now() -
+          inicioFinalizacao
+        )
+      : 0;
+
+
+  mostrarMetricas(
+    'Finalizar → transcrição: ' +
+    tempoTranscricao +
+    ' ms'
+  );
+
+
+  if (!textoFinal) {
+    falhar(
+      'Nenhuma fala foi identificada.'
+    );
+
+    return;
+  }
+
+
+  enviarCadastroRealtime(
+    textoFinal
+  );
+
+  return;
+}
 
 
       if (textoFinal) {
