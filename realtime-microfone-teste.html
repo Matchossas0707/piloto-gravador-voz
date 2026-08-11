@@ -335,36 +335,55 @@ let cadastroProvisorio = null;
     };
 
 
-  function solicitarToken() {
-    return new Promise(
-      function (resolve, reject) {
+ function solicitarToken() {
+  return new Promise(
+    function (resolve, reject) {
 
-        resolverToken = resolve;
-        rejeitarToken = reject;
+      resolverToken = resolve;
+      rejeitarToken = reject;
 
-        removerScriptToken();
+      removerScriptToken();
 
-        const script =
-          document.createElement('script');
+      const script =
+        document.createElement('script');
 
-        script.id =
-          'tokenRealtimeMicrofone';
+      script.id =
+        'tokenRealtimeMicrofone';
 
-        script.src =
-          URL_APPS_SCRIPT +
-          '?acao=tokenRealtimeTeste' +
-          '&callback=receberTokenRealtimeMicrofone' +
-          '&_=' +
-          Date.now();
+      script.src =
+        URL_APPS_SCRIPT +
+        '?acao=tokenRealtimeTeste' +
+        '&callback=receberTokenRealtimeMicrofone' +
+        '&_=' +
+        Date.now();
 
-        script.onerror =
+      script.onerror =
+        function () {
+          reject(
+            new Error(
+              'Não foi possível receber a credencial do Apps Script.'
+            )
+          );
+        };
+
+      timeoutToken =
+        setTimeout(
           function () {
             reject(
               new Error(
-                'Não foi possível receber a credencial do Apps Script.'
+                'O Apps Script demorou demais para responder.'
               )
             );
-          };
+          },
+          15000
+        );
+
+      document.head.appendChild(script);
+    }
+  );
+}
+
+
 window.receberTokenPreInterpretacaoRealtime =
   function (dados) {
 
@@ -422,9 +441,7 @@ function solicitarTokenPreInterpretacao() {
         reject;
 
       const script =
-        document.createElement(
-          'script'
-        );
+        document.createElement('script');
 
       script.src =
         URL_APPS_SCRIPT +
@@ -436,19 +453,14 @@ function solicitarTokenPreInterpretacao() {
       script.onerror =
         function () {
 
-          if (
-            timeoutTokenPreInterpretacao
-          ) {
+          if (timeoutTokenPreInterpretacao) {
             clearTimeout(
               timeoutTokenPreInterpretacao
             );
           }
 
-          resolverTokenPreInterpretacao =
-            null;
-
-          rejeitarTokenPreInterpretacao =
-            null;
+          resolverTokenPreInterpretacao = null;
+          rejeitarTokenPreInterpretacao = null;
 
           reject(
             new Error(
@@ -464,33 +476,29 @@ function solicitarTokenPreInterpretacao() {
           script.remove();
         };
 
-      document.head.appendChild(
-        script
-      );
+      document.head.appendChild(script);
 
       timeoutTokenPreInterpretacao =
         setTimeout(
           function () {
 
-            resolverTokenPreInterpretacao =
-              null;
-
-            rejeitarTokenPreInterpretacao =
-              null;
+            resolverTokenPreInterpretacao = null;
+            rejeitarTokenPreInterpretacao = null;
 
             reject(
               new Error(
                 'O token da pré-interpretação demorou demais para responder.'
               )
             );
-
           },
           15000
         );
     }
   );
 }
-        function preInterpretacaoAindaValida() {
+
+
+function preInterpretacaoAindaValida() {
   return (
     conexaoPreInterpretacaoPronta &&
     conexaoPreInterpretacao &&
@@ -514,10 +522,6 @@ async function prepararPreInterpretacao() {
   preparandoPreInterpretacao =
     (async function () {
 
-      /*
-       * O microfone já é obtido pela conexão
-       * principal. Não pedimos permissão novamente.
-       */
       await obterMicrofone();
 
       const dadosToken =
@@ -531,15 +535,10 @@ async function prepararPreInterpretacao() {
           'oai-events-pre'
         );
 
-      /*
-       * A MESMA faixa do microfone
-       * alimenta esta segunda sessão.
-       */
       pc.addTrack(
         faixaMicrofone,
         fluxoMicrofone
       );
-
 
       dc.addEventListener(
         'message',
@@ -552,7 +551,6 @@ async function prepararPreInterpretacao() {
               '[PRE-INTERPRETACAO]',
               dados
             );
-
           } catch (erro) {
             console.error(
               '[PRE-INTERPRETACAO] Evento inválido',
@@ -561,7 +559,6 @@ async function prepararPreInterpretacao() {
           }
         }
       );
-
 
       pc.addEventListener(
         'connectionstatechange',
@@ -582,14 +579,12 @@ async function prepararPreInterpretacao() {
         }
       );
 
-
       const oferta =
         await pc.createOffer();
 
       await pc.setLocalDescription(
         oferta
       );
-
 
       const resposta =
         await fetch(
@@ -610,7 +605,6 @@ async function prepararPreInterpretacao() {
           }
         );
 
-
       if (!resposta.ok) {
         const erroTexto =
           await resposta.text();
@@ -621,23 +615,18 @@ async function prepararPreInterpretacao() {
         );
       }
 
-
       const respostaSdp =
         await resposta.text();
-
 
       await pc.setRemoteDescription({
         type: 'answer',
         sdp: respostaSdp
       });
 
-
       await new Promise(
         function (resolve, reject) {
 
-          if (
-            dc.readyState === 'open'
-          ) {
+          if (dc.readyState === 'open') {
             resolve();
             return;
           }
@@ -654,7 +643,6 @@ async function prepararPreInterpretacao() {
               10000
             );
 
-
           dc.addEventListener(
             'open',
             function () {
@@ -668,9 +656,9 @@ async function prepararPreInterpretacao() {
         }
       );
 
-
       conexaoPreInterpretacao = pc;
       canalPreInterpretacao = dc;
+
       conexaoPreInterpretacaoPronta =
         true;
 
@@ -679,7 +667,6 @@ async function prepararPreInterpretacao() {
       );
     })();
 
-
   try {
     await preparandoPreInterpretacao;
 
@@ -687,23 +674,6 @@ async function prepararPreInterpretacao() {
     preparandoPreInterpretacao = null;
   }
 }
-        timeoutToken =
-          setTimeout(
-            function () {
-              reject(
-                new Error(
-                  'O Apps Script demorou demais para responder.'
-                )
-              );
-            },
-            15000
-          );
-
-        document.head.appendChild(script);
-      }
-    );
-  }
-
 function enviarCadastroRealtime(texto) {
   if (
     !texto ||
@@ -1328,7 +1298,7 @@ mostrarMetricas(
     ? 'SIM'
     : 'NÃO'
 )
-
+);
       transcricaoElemento.textContent =
         'Ouvindo...';
 
