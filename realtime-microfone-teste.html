@@ -781,14 +781,120 @@ async function prepararPreInterpretacao() {
       const dados =
         JSON.parse(evento.data);
 
-      processarEventoPreInterpretacao(
-        dados,
-        dc
+      const caixa =
+        document.getElementById(
+          'cadastroProvisorioPreIA'
+        );
+
+      console.log(
+        '[PRE-IA EVENTO]',
+        dados
       );
+
+      if (dados.type === 'error') {
+        const mensagem =
+          dados.error &&
+          dados.error.message
+            ? dados.error.message
+            : JSON.stringify(dados);
+
+        if (caixa) {
+          caixa.textContent =
+            'Pré-IA — ERRO:\n\n' +
+            mensagem;
+        }
+
+        return;
+      }
+
+
+      if (
+        dados.type ===
+        'session.updated'
+      ) {
+        if (
+          caixa &&
+          !cadastroProvisorio
+        ) {
+          caixa.textContent =
+            'Pré-IA: sessão configurada ✅';
+        }
+
+        return;
+      }
+
+
+      if (
+        dados.type ===
+        'input_audio_buffer.speech_started'
+      ) {
+        if (
+          caixa &&
+          !cadastroProvisorio
+        ) {
+          caixa.textContent =
+            'Pré-IA: ouvindo a fala... 🎤';
+        }
+
+        return;
+      }
+
+
+      if (
+        dados.type ===
+        'input_audio_buffer.speech_stopped'
+      ) {
+        if (
+          caixa &&
+          !cadastroProvisorio
+        ) {
+          caixa.textContent =
+            'Pré-IA: fala recebida. Interpretando...';
+        }
+
+        return;
+      }
+
+
+      if (
+        dados.type ===
+        'response.created'
+      ) {
+        if (
+          caixa &&
+          !cadastroProvisorio
+        ) {
+          caixa.textContent =
+            'Pré-IA: resposta criada...';
+        }
+
+        return;
+      }
+
+
+      if (
+        dados.type ===
+        'response.done'
+      ) {
+        processarEventoPreInterpretacao(
+          dados,
+          dc
+        );
+
+        if (
+          !cadastroProvisorio &&
+          caixa
+        ) {
+          caixa.textContent =
+            'Pré-IA: resposta recebida, mas nenhum cadastro foi retornado.';
+        }
+
+        return;
+      }
 
     } catch (erro) {
       console.error(
-        '[PRE-INTERPRETACAO] Evento inválido',
+        '[PRE-IA] Evento inválido',
         erro
       );
     }
