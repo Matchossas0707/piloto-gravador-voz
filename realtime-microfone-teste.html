@@ -872,25 +872,48 @@ async function prepararPreInterpretacao() {
       }
 
 
-      if (
-        dados.type ===
-        'response.done'
-      ) {
-        processarEventoPreInterpretacao(
-          dados,
-          dc
-        );
+     if (
+  dados.type ===
+  'response.done'
+) {
+  processarEventoPreInterpretacao(
+    dados,
+    dc
+  );
 
-        if (
-          !cadastroProvisorio &&
-          caixa
-        ) {
-          caixa.textContent =
-            'Pré-IA: resposta recebida, mas nenhum cadastro foi retornado.';
-        }
+  if (
+    !cadastroProvisorio &&
+    caixa
+  ) {
+    const resposta =
+      dados.response || {};
 
-        return;
-      }
+    const saidas =
+      Array.isArray(resposta.output)
+        ? resposta.output
+            .map(function (item) {
+              return (
+                item.type +
+                (
+                  item.name
+                    ? ' → ' + item.name
+                    : ''
+                )
+              );
+            })
+            .join(', ')
+        : '';
+
+    caixa.textContent =
+      'Pré-IA: resposta sem cadastro.\n\n' +
+      'Status: ' +
+      (resposta.status || '-') +
+      '\nSaída: ' +
+      (saidas || 'vazia');
+  }
+
+  return;
+}
 
     } catch (erro) {
       console.error(
