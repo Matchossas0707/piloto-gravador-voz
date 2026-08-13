@@ -1523,7 +1523,152 @@ function enviarCadastroRealtime(texto) {
       30000
     );
 }
+   function interpretacaoPreIAValida(
+  interpretacao
+) {
+  if (
+    !interpretacao ||
+    typeof interpretacao !== 'object'
+  ) {
+    return false;
+  }
 
+  const temResponsavel =
+    String(
+      interpretacao.autoescola || ''
+    ).trim() ||
+    String(
+      interpretacao.instrutor || ''
+    ).trim();
+
+  const alunos =
+    Array.isArray(
+      interpretacao.alunos
+    )
+      ? interpretacao.alunos
+      : [];
+
+  const temAlunoValido =
+    alunos.some(
+      function (aluno) {
+        return (
+          aluno &&
+          String(
+            aluno.nome || ''
+          ).trim()
+        );
+      }
+    );
+
+ const duvidas =
+  Array.isArray(
+    interpretacao.duvidas
+  )
+    ? interpretacao.duvidas
+    : [];
+
+const semDuvidas =
+  duvidas.length === 0;
+
+return Boolean(
+  temResponsavel &&
+  temAlunoValido &&
+  semDuvidas
+);
+}
+function enviarCadastroPreInterpretado(
+  interpretacao
+) {
+  if (
+    !interpretacao ||
+    cadastroEmAndamento
+  ) {
+    return;
+  }
+
+  cadastroEmAndamento = true;
+
+  definirStatus(
+    'Pré-IA pronta. Cadastrando diretamente...'
+  );
+
+  const nomeIframe =
+    'pilotoCadastroPreIA_' +
+    Date.now();
+
+  iframeCadastroAtual =
+    document.createElement('iframe');
+
+  iframeCadastroAtual.name =
+    nomeIframe;
+
+  iframeCadastroAtual.style.display =
+    'none';
+
+  document.body.appendChild(
+    iframeCadastroAtual
+  );
+
+
+  const formulario =
+    document.createElement('form');
+
+  formulario.method = 'POST';
+  formulario.action = URL_APPS_SCRIPT;
+  formulario.target = nomeIframe;
+  formulario.style.display = 'none';
+
+
+  const campos = {
+    acao:
+      'cadastrar_pre_interpretado',
+
+    interpretacao:
+      JSON.stringify(
+        interpretacao
+      )
+  };
+
+
+  Object.keys(campos).forEach(
+    function (nome) {
+      const input =
+        document.createElement('input');
+
+      input.type = 'hidden';
+      input.name = nome;
+      input.value = campos[nome];
+
+      formulario.appendChild(
+        input
+      );
+    }
+  );
+
+
+  document.body.appendChild(
+    formulario
+  );
+
+  formulario.submit();
+  formulario.remove();
+
+
+  timeoutCadastro =
+    setTimeout(
+      function () {
+        cadastroEmAndamento = false;
+
+        definirStatus(
+          'O cadastro rápido demorou mais que o esperado.',
+          'erro'
+        );
+
+        botaoIniciar.disabled = false;
+      },
+      30000
+    );
+}
 
 window.addEventListener(
   'message',
@@ -1712,21 +1857,37 @@ window.addEventListener(
     textoFinal
   );
 
-if (interpretacaoFinalPreIA) {
+if (
+  interpretacaoPreIAValida(
+    interpretacaoFinalPreIA
+  )
+) {
   cadastroProvisorio =
     interpretacaoFinalPreIA;
 
   mostrarCadastroProvisorioNaTela();
-}
 
-/*
- * POR ENQUANTO mantém o fluxo antigo
- * para cadastrar na planilha.
- * É nossa segurança neste teste.
- */
-enviarCadastroRealtime(
-  textoFinal
-);
+  /*
+   * CAMINHO RÁPIDO:
+   * a interpretação já está pronta.
+   * Vai direto para a planilha.
+   */
+  enviarCadastroPreInterpretado(
+    interpretacaoFinalPreIA
+  );
+
+} else {
+
+  /*
+   * FALLBACK:
+   * se a Pré-IA não entregar um
+   * cadastro válido, usamos o fluxo
+   * antigo com a IA tradicional.
+   */
+  enviarCadastroRealtime(
+    textoFinal
+  );
+}
 
   return;
 }
