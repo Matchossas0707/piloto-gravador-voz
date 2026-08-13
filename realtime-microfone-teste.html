@@ -498,12 +498,14 @@ function solicitarTokenPreInterpretacao() {
 }
 
 function configurarFerramentaPreInterpretacao(dc) {
-  dc.send(
-    JSON.stringify({
-      type: 'session.update',
+ dc.send(
+  JSON.stringify({
+    type: 'session.update',
 
-      session: {
-        tools: [
+    session: {
+      type: 'realtime',
+
+      tools: [
           {
             type: 'function',
 
