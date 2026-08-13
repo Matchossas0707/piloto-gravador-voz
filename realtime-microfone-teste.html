@@ -221,6 +221,8 @@ let rejeitarTokenPreInterpretacao = null;
  * vai montando enquanto a pessoa fala.
  */
 let cadastroProvisorio = null;
+   let itensConversaPreIA =
+  new Set();
 let timerPreInterpretacaoTexto = null;
 
 let preInterpretacaoTextoEmAndamento = false;
@@ -767,6 +769,49 @@ dispararCadastroFinalPreIA();
     }
   );
 }
+function limparConversaPreIA() {
+  if (
+    !canalPreInterpretacao ||
+    canalPreInterpretacao.readyState !== 'open' ||
+    itensConversaPreIA.size === 0
+  ) {
+    itensConversaPreIA.clear();
+    return;
+  }
+
+  const itens =
+    Array.from(
+      itensConversaPreIA
+    );
+
+  /*
+   * Limpamos localmente primeiro.
+   * Se o servidor confirmar as exclusões,
+   * os eventos deleted apenas manterão
+   * este conjunto vazio.
+   */
+  itensConversaPreIA.clear();
+
+  itens.forEach(
+    function (itemId) {
+      canalPreInterpretacao.send(
+        JSON.stringify({
+          type:
+            'conversation.item.delete',
+
+          item_id:
+            itemId
+        })
+      );
+    }
+  );
+
+  console.log(
+    '[PRE-IA] Histórico anterior limpo:',
+    itens.length,
+    'item(ns)'
+  );
+}   
 function configurarFerramentaPreInterpretacao(dc) {
  dc.send(
   JSON.stringify({
@@ -1064,7 +1109,26 @@ pc.addTransceiver(
   function (evento) {
     try {
       const dados =
-        JSON.parse(evento.data);
+        JSON.parse(evento.data);if (
+  dados.type ===
+    'conversation.item.created' &&
+  dados.item &&
+  dados.item.id
+) {
+  itensConversaPreIA.add(
+    dados.item.id
+  );
+}
+
+if (
+  dados.type ===
+    'conversation.item.deleted' &&
+  dados.item_id
+) {
+  itensConversaPreIA.delete(
+    dados.item_id
+  );
+}
 
       const caixa =
         document.getElementById(
@@ -1747,7 +1811,14 @@ window.addEventListener(
       ' aluno(s) inserido(s) na planilha.',
       'sucesso'
     );
-
+/*
+ * O atendimento terminou.
+ * Limpamos agora o contexto interno
+ * da Pré-IA para o próximo cliente.
+ *
+ * A conexão WebRTC continua aberta.
+ */
+limparConversaPreIA();
 
     mostrarMetricas(
       'Finalizar → planilha: ' +
@@ -2240,6 +2311,12 @@ const reutilizandoPre =
 await prepararConexao();
 
 await prepararPreInterpretacao();
+
+/*
+ * A conexão continua reutilizada,
+ * mas a conversa anterior é apagada.
+ */
+limparConversaPreIA();
 
       /*
        * Da segunda vez em diante,
