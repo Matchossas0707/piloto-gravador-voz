@@ -1043,7 +1043,20 @@ async function prepararPreInterpretacao() {
       const dc =
         pc.createDataChannel(
           'oai-events-pre'
-        );
+        ); /*
+ * O WebRTC da OpenAI exige uma seção
+ * de áudio no SDP.
+ *
+ * recvonly cria essa seção, mas NÃO
+ * envia o microfone para a Pré-IA.
+ * Ela continuará recebendo somente texto.
+ */
+pc.addTransceiver(
+  'audio',
+  {
+    direction: 'recvonly'
+  }
+);
 
      dc.addEventListener(
   'message',
