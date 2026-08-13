@@ -221,7 +221,14 @@ let rejeitarTokenPreInterpretacao = null;
  * vai montando enquanto a pessoa fala.
  */
 let cadastroProvisorio = null;
+let timerPreInterpretacaoTexto = null;
 
+let preInterpretacaoTextoEmAndamento = false;
+
+let preInterpretacaoTextoPendente = false;
+
+let ultimoTextoEnviadoPreIA = '';
+   
   function definirStatus(
     mensagem,
     tipo = ''
@@ -496,7 +503,115 @@ function solicitarTokenPreInterpretacao() {
     }
   );
 }
+function agendarPreInterpretacaoTexto() {
+  if (timerPreInterpretacaoTexto) {
+    return;
+  }
 
+  timerPreInterpretacaoTexto =
+    setTimeout(
+      function () {
+        timerPreInterpretacaoTexto = null;
+
+        enviarTextoParaPreInterpretacao();
+      },
+      800
+    );
+}
+
+
+function enviarTextoParaPreInterpretacao() {
+  if (
+    !preInterpretacaoAindaValida() ||
+    !canalPreInterpretacao
+  ) {
+    return;
+  }
+
+  const textoAtual =
+    String(textoParcial || '').trim();
+
+  if (!textoAtual) {
+    return;
+  }
+
+  /*
+   * Se a Pré-IA ainda estiver processando
+   * o envio anterior, marcamos que existe
+   * texto novo esperando.
+   */
+  if (preInterpretacaoTextoEmAndamento) {
+    preInterpretacaoTextoPendente = true;
+    return;
+  }
+
+  if (
+    textoAtual ===
+    ultimoTextoEnviadoPreIA
+  ) {
+    return;
+  }
+
+  let trechoNovo = textoAtual;
+
+  /*
+   * Envia somente o trecho que ainda
+   * não foi passado para a Pré-IA.
+   */
+  if (
+    ultimoTextoEnviadoPreIA &&
+    textoAtual.startsWith(
+      ultimoTextoEnviadoPreIA
+    )
+  ) {
+    trechoNovo =
+      textoAtual
+        .slice(
+          ultimoTextoEnviadoPreIA.length
+        )
+        .trim();
+  }
+
+  if (!trechoNovo) {
+    return;
+  }
+
+  ultimoTextoEnviadoPreIA =
+    textoAtual;
+
+  preInterpretacaoTextoEmAndamento =
+    true;
+
+  preInterpretacaoTextoPendente =
+    false;
+
+
+  canalPreInterpretacao.send(
+    JSON.stringify({
+      type:
+        'conversation.item.create',
+
+      item: {
+        type: 'message',
+        role: 'user',
+
+        content: [
+          {
+            type: 'input_text',
+            text: trechoNovo
+          }
+        ]
+      }
+    })
+  );
+
+
+  canalPreInterpretacao.send(
+    JSON.stringify({
+      type: 'response.create'
+    })
+  );
+}
 function configurarFerramentaPreInterpretacao(dc) {
  dc.send(
   JSON.stringify({
@@ -776,11 +891,6 @@ async function prepararPreInterpretacao() {
           'oai-events-pre'
         );
 
-      pc.addTrack(
-        faixaMicrofone,
-        fluxoMicrofone
-      );
-
      dc.addEventListener(
   'message',
   function (evento) {
@@ -887,6 +997,15 @@ async function prepararPreInterpretacao() {
     dados,
     dc
   );
+       preInterpretacaoTextoEmAndamento =
+  false;
+
+if (preInterpretacaoTextoPendente) {
+  preInterpretacaoTextoPendente =
+    false;
+
+  agendarPreInterpretacaoTexto();
+}
 
   if (
     !cadastroProvisorio &&
@@ -1246,6 +1365,7 @@ window.addEventListener(
 
       transcricaoElemento.textContent =
         textoParcial || 'Ouvindo...';
+      agendarPreInterpretacaoTexto();
 
 
       if (!primeiraDeltaRecebida) {
@@ -1574,7 +1694,23 @@ window.addEventListener(
   }
 
 
-  async function iniciar() {cadastroProvisorio = null;
+  async function iniciar() {if (timerPreInterpretacaoTexto) {
+  clearTimeout(
+    timerPreInterpretacaoTexto
+  );
+
+  timerPreInterpretacaoTexto = null;
+}
+
+cadastroProvisorio = null;
+
+preInterpretacaoTextoEmAndamento =
+  false;
+
+preInterpretacaoTextoPendente =
+  false;
+
+ultimoTextoEnviadoPreIA = '';
 
 mostrarCadastroProvisorioNaTela();
     if (
