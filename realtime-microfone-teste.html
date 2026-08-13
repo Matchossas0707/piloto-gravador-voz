@@ -2019,10 +2019,49 @@ mostrarCadastroProvisorioNaTela();
   }
 
 
-  const interpretacaoFinalPreIA =
-  await aguardarCadastroFinalPreIA(
-    textoFinal
+ let interpretacaoFinalPreIA = null;
+
+/*
+ * Se a Pré-IA já terminou de interpretar
+ * tudo que chegou pela transcrição,
+ * reutilizamos o cadastro imediatamente.
+ *
+ * NÃO pedimos uma nova interpretação.
+ */
+const preIAJaPronta =
+  interpretacaoPreIAValida(
+    cadastroProvisorio
+  ) &&
+  !preInterpretacaoTextoEmAndamento &&
+  !preInterpretacaoTextoPendente &&
+  !timerPreInterpretacaoTexto &&
+  String(
+    ultimoTextoEnviadoPreIA || ''
+  ).trim() ===
+  String(
+    textoParcial || ''
+  ).trim();
+
+if (preIAJaPronta) {
+  interpretacaoFinalPreIA =
+    cadastroProvisorio;
+
+  console.log(
+    '[PRE-IA FINAL] Cadastro já estava pronto.'
   );
+
+} else {
+  /*
+   * Segurança:
+   * se a Pré-IA ainda não terminou,
+   * mantemos por enquanto o fluxo
+   * final que já existe.
+   */
+  interpretacaoFinalPreIA =
+    await aguardarCadastroFinalPreIA(
+      textoFinal
+    );
+}
 
 if (
   interpretacaoPreIAValida(
