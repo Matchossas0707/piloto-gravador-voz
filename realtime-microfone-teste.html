@@ -1861,7 +1861,13 @@ if (
   interpretacaoPreIAValida(
     interpretacaoFinalPreIA
   )
-) {
+) {console.log(
+  '[CAMINHO CADASTRO] PRE-IA'
+);
+
+definirStatus(
+  'Pré-IA final válida. Usando caminho rápido...'
+);
   cadastroProvisorio =
     interpretacaoFinalPreIA;
 
@@ -1877,7 +1883,13 @@ if (
   );
 
 } else {
+console.log(
+  '[CAMINHO CADASTRO] FALLBACK'
+);
 
+definirStatus(
+  'Pré-IA final indisponível. Usando interpretação tradicional...'
+);
   /*
    * FALLBACK:
    * se a Pré-IA não entregar um
