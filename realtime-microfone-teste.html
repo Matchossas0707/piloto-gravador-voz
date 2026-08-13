@@ -234,6 +234,10 @@ let aguardandoPreIAFinal = false;
 let resolverPreIAFinal = null;
 
 let timeoutPreIAFinal = null;
+
+let textoFinalAguardadoPreIA = '';
+
+let preIAFinalDisparada = false;   
    
   function definirStatus(
     mensagem,
@@ -618,6 +622,150 @@ function enviarTextoParaPreInterpretacao() {
     })
   );
 }
+function dispararCadastroFinalPreIA() {
+  if (
+    !aguardandoPreIAFinal ||
+    preIAFinalDisparada ||
+    !canalPreInterpretacao ||
+    canalPreInterpretacao.readyState !== 'open'
+  ) {
+    return;
+  }
+
+  preIAFinalDisparada = true;
+
+  preInterpretacaoTextoEmAndamento =
+    true;
+
+  canalPreInterpretacao.send(
+    JSON.stringify({
+      type:
+        'conversation.item.create',
+
+      item: {
+        type: 'message',
+        role: 'user',
+
+        content: [
+          {
+            type: 'input_text',
+
+            text:
+              'TRANSCRIÇÃO FINAL AUTORITATIVA DO ATENDIMENTO.\n' +
+              'Ignore qualquer divergência existente nos trechos incrementais anteriores.\n' +
+              'Use esta versão final como fonte correta para nomes, autoescola, instrutor, alunos, pagamentos, correções e exclusões.\n' +
+              'Retorne o estado FINAL COMPLETO chamando atualizar_cadastro_provisorio.\n\n' +
+              textoFinalAguardadoPreIA
+          }
+        ]
+      }
+    })
+  );
+
+  canalPreInterpretacao.send(
+    JSON.stringify({
+      type: 'response.create'
+    })
+  );
+}
+
+
+function aguardarCadastroFinalPreIA(
+  textoFinal
+) {
+  const texto =
+    String(textoFinal || '').trim();
+
+  return new Promise(
+    function (resolve) {
+
+      if (
+        !texto ||
+        !preInterpretacaoAindaValida() ||
+        !canalPreInterpretacao
+      ) {
+        resolve(null);
+        return;
+      }
+
+
+      if (timerPreInterpretacaoTexto) {
+        clearTimeout(
+          timerPreInterpretacaoTexto
+        );
+
+        timerPreInterpretacaoTexto = null;
+      }
+
+      preInterpretacaoTextoPendente =
+        false;
+
+      textoFinalAguardadoPreIA =
+        texto;
+
+      aguardandoPreIAFinal =
+        true;
+
+      preIAFinalDisparada =
+        false;
+
+      resolverPreIAFinal =
+        resolve;
+
+
+      if (timeoutPreIAFinal) {
+        clearTimeout(
+          timeoutPreIAFinal
+        );
+      }
+
+      timeoutPreIAFinal =
+        setTimeout(
+          function () {
+
+            timeoutPreIAFinal = null;
+
+            aguardandoPreIAFinal =
+              false;
+
+            preIAFinalDisparada =
+              false;
+
+            resolverPreIAFinal =
+              null;
+
+            resolve(null);
+          },
+          5000
+        );
+
+
+      /*
+       * Se uma interpretação incremental
+       * ainda estiver sendo gerada,
+       * cancelamos apenas essa resposta.
+       *
+       * Assim que o servidor confirmar
+       * o cancelamento, enviaremos
+       * a transcrição final.
+       */
+      if (
+        preInterpretacaoTextoEmAndamento
+      ) {
+        canalPreInterpretacao.send(
+          JSON.stringify({
+            type: 'response.cancel'
+          })
+        );
+
+        return;
+      }
+
+
+      dispararCadastroFinalPreIA();
+    }
+  );
+}
 function configurarFerramentaPreInterpretacao(dc) {
  dc.send(
   JSON.stringify({
@@ -995,10 +1143,167 @@ async function prepararPreInterpretacao() {
       }
 
 
-     if (
+   if (
   dados.type ===
   'response.done'
 ) {
+  const statusResposta =
+    dados.response &&
+    dados.response.status
+      ? dados.response.status
+      : '';
+
+  /*
+   * Só processamos cadastro de uma
+   * resposta realmente concluída.
+   */
+  if (
+    statusResposta === 'completed'
+  ) {
+    processarEventoPreInterpretacao(
+      dados,
+      dc
+    );
+  }
+
+  preInterpretacaoTextoEmAndamento =
+    false;
+
+
+  /*
+   * Estamos no processo de Finalizar.
+   */
+  if (aguardandoPreIAFinal) {
+
+    /*
+     * A resposta incremental anterior
+     * acabou/cancelou.
+     *
+     * Agora podemos disparar a análise
+     * da transcrição FINAL.
+     */
+    if (!preIAFinalDisparada) {
+      dispararCadastroFinalPreIA();
+      return;
+    }
+
+
+    /*
+     * Esta já é a resposta da
+     * transcrição FINAL.
+     */
+    if (
+      statusResposta === 'completed'
+    ) {
+      const resultadoFinal =
+        cadastroProvisorio;
+
+      if (timeoutPreIAFinal) {
+        clearTimeout(
+          timeoutPreIAFinal
+        );
+
+        timeoutPreIAFinal = null;
+      }
+
+      aguardandoPreIAFinal = false;
+      preIAFinalDisparada = false;
+
+      preInterpretacaoTextoPendente =
+        false;
+
+      const resolver =
+        resolverPreIAFinal;
+
+      resolverPreIAFinal = null;
+
+      if (resolver) {
+        resolver(
+          resultadoFinal || null
+        );
+      }
+
+      return;
+    }
+
+
+    /*
+     * Se por algum motivo a própria
+     * resposta final falhar/cancelar,
+     * liberamos o fluxo para usar
+     * o fallback antigo.
+     */
+    if (timeoutPreIAFinal) {
+      clearTimeout(
+        timeoutPreIAFinal
+      );
+
+      timeoutPreIAFinal = null;
+    }
+
+    aguardandoPreIAFinal = false;
+    preIAFinalDisparada = false;
+
+    const resolver =
+      resolverPreIAFinal;
+
+    resolverPreIAFinal = null;
+
+    if (resolver) {
+      resolver(null);
+    }
+
+    return;
+  }
+
+
+  /*
+   * Fluxo normal durante a conversa:
+   * se chegou mais transcrição enquanto
+   * a Pré-IA trabalhava, manda o próximo
+   * pedaço.
+   */
+  if (preInterpretacaoTextoPendente) {
+    preInterpretacaoTextoPendente =
+      false;
+
+    agendarPreInterpretacaoTexto();
+  }
+
+
+  if (
+    !cadastroProvisorio &&
+    caixa
+  ) {
+    const resposta =
+      dados.response || {};
+
+    const saidas =
+      Array.isArray(resposta.output)
+        ? resposta.output
+            .map(function (item) {
+              return (
+                item.type +
+                (
+                  item.name
+                    ? ' → ' + item.name
+                    : ''
+                )
+              );
+            })
+            .join(', ')
+        : '';
+
+    caixa.textContent =
+      'Pré-IA: resposta sem cadastro.\n\n' +
+      'Status: ' +
+      (resposta.status || '-') +
+      '\nSaída: ' +
+      (saidas || 'vazia');
+  }
+
+  return;
+}
   processarEventoPreInterpretacao(
     dados,
     dc
@@ -1353,7 +1658,7 @@ window.addEventListener(
     silenciarMicrofone();
   }
 );
-  function tratarEventoRealtime(evento) {
+  async function tratarEventoRealtime(evento) {
     console.log(
       '[REALTIME]',
       evento
@@ -1437,9 +1742,26 @@ window.addEventListener(
   }
 
 
-  enviarCadastroRealtime(
+  const interpretacaoFinalPreIA =
+  await aguardarCadastroFinalPreIA(
     textoFinal
   );
+
+if (interpretacaoFinalPreIA) {
+  cadastroProvisorio =
+    interpretacaoFinalPreIA;
+
+  mostrarCadastroProvisorioNaTela();
+}
+
+/*
+ * POR ENQUANTO mantém o fluxo antigo
+ * para cadastrar na planilha.
+ * É nossa segurança neste teste.
+ */
+enviarCadastroRealtime(
+  textoFinal
+);
 
   return;
 }
@@ -1716,7 +2038,22 @@ preInterpretacaoTextoEmAndamento =
 preInterpretacaoTextoPendente =
   false;
 
-ultimoTextoEnviadoPreIA = '';
+ultimoTextoEnviadoPreIA = ''; if (timeoutPreIAFinal) {
+  clearTimeout(
+    timeoutPreIAFinal
+  );
+
+  timeoutPreIAFinal = null;
+}
+
+aguardandoPreIAFinal = false;
+
+resolverPreIAFinal = null;
+
+textoFinalAguardadoPreIA = '';
+
+preIAFinalDisparada = false;
+
 
 mostrarCadastroProvisorioNaTela();
     if (
