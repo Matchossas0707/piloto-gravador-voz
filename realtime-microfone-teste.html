@@ -580,10 +580,15 @@ function configurarFerramentaPreInterpretacao(dc) {
           }
         ],
 
-        tool_choice: 'required'
+       tool_choice: {
+          type: 'function',
+          name: 'atualizar_cadastro_provisorio'
+        }
       }
     })
   );
+}
+   
 }function mostrarCadastroProvisorioNaTela() {
   let caixa =
     document.getElementById(
