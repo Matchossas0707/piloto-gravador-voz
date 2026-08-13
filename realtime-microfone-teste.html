@@ -229,6 +229,12 @@ let preInterpretacaoTextoPendente = false;
 
 let ultimoTextoEnviadoPreIA = '';
    
+let aguardandoPreIAFinal = false;
+
+let resolverPreIAFinal = null;
+
+let timeoutPreIAFinal = null;
+   
   function definirStatus(
     mensagem,
     tipo = ''
