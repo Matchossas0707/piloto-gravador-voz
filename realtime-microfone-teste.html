@@ -223,6 +223,14 @@ let rejeitarTokenPreInterpretacao = null;
 let cadastroProvisorio = null;
    let itensConversaPreIA =
   new Set();
+   let itensPendentesExclusaoPreIA =
+  new Set();
+
+let resolverLimpezaPreIA = null;
+
+let timeoutLimpezaPreIA = null;
+
+let limpezaPreIAEmAndamento = null;
 let timerPreInterpretacaoTexto = null;
 
 let preInterpretacaoTextoEmAndamento = false;
@@ -769,49 +777,106 @@ dispararCadastroFinalPreIA();
     }
   );
 }
-function limparConversaPreIA() {
+async function limparConversaPreIA() {
+  /*
+   * Se uma limpeza já estiver acontecendo,
+   * apenas esperamos a mesma terminar.
+   */
+  if (limpezaPreIAEmAndamento) {
+    await limpezaPreIAEmAndamento;
+    return;
+  }
+
+
   if (
     !canalPreInterpretacao ||
     canalPreInterpretacao.readyState !== 'open' ||
     itensConversaPreIA.size === 0
   ) {
     itensConversaPreIA.clear();
+
+    itensPendentesExclusaoPreIA.clear();
+
     return;
   }
+
 
   const itens =
     Array.from(
       itensConversaPreIA
     );
 
-  /*
-   * Limpamos localmente primeiro.
-   * Se o servidor confirmar as exclusões,
-   * os eventos deleted apenas manterão
-   * este conjunto vazio.
-   */
-  itensConversaPreIA.clear();
 
-  itens.forEach(
-    function (itemId) {
-      canalPreInterpretacao.send(
-        JSON.stringify({
-          type:
-            'conversation.item.delete',
+  itensPendentesExclusaoPreIA =
+    new Set(itens);
 
-          item_id:
-            itemId
-        })
-      );
-    }
-  );
 
-  console.log(
-    '[PRE-IA] Histórico anterior limpo:',
-    itens.length,
-    'item(ns)'
-  );
-}   
+  limpezaPreIAEmAndamento =
+    new Promise(
+      function (resolve) {
+
+        resolverLimpezaPreIA =
+          resolve;
+
+
+        /*
+         * Segurança:
+         * não deixamos o sistema preso
+         * indefinidamente caso uma confirmação
+         * não chegue.
+         */
+        timeoutLimpezaPreIA =
+          setTimeout(
+            function () {
+
+              timeoutLimpezaPreIA = null;
+
+              resolverLimpezaPreIA = null;
+
+              itensPendentesExclusaoPreIA.clear();
+
+              resolve();
+
+            },
+            3000
+          );
+
+
+        itens.forEach(
+          function (itemId) {
+
+            canalPreInterpretacao.send(
+              JSON.stringify({
+                type:
+                  'conversation.item.delete',
+
+                item_id:
+                  itemId
+              })
+            );
+          }
+        );
+      }
+    );
+
+
+  try {
+    await limpezaPreIAEmAndamento;
+
+    console.log(
+      '[PRE-IA] Histórico limpo e confirmado:',
+      itens.length,
+      'item(ns)'
+    );
+
+  } finally {
+    limpezaPreIAEmAndamento = null;
+
+    itensConversaPreIA.clear();
+
+    itensPendentesExclusaoPreIA.clear();
+  }
+}
 function configurarFerramentaPreInterpretacao(dc) {
  dc.send(
   JSON.stringify({
@@ -1128,6 +1193,34 @@ if (
   itensConversaPreIA.delete(
     dados.item_id
   );
+
+  itensPendentesExclusaoPreIA.delete(
+    dados.item_id
+  );
+
+  /*
+   * Todos os itens foram confirmados
+   * como excluídos pelo servidor.
+   */
+  if (
+    itensPendentesExclusaoPreIA.size === 0 &&
+    resolverLimpezaPreIA
+  ) {
+    if (timeoutLimpezaPreIA) {
+      clearTimeout(
+        timeoutLimpezaPreIA
+      );
+
+      timeoutLimpezaPreIA = null;
+    }
+
+    const resolver =
+      resolverLimpezaPreIA;
+
+    resolverLimpezaPreIA = null;
+
+    resolver();
+  }
 }
 
       const caixa =
@@ -2316,7 +2409,7 @@ await prepararPreInterpretacao();
  * A conexão continua reutilizada,
  * mas a conversa anterior é apagada.
  */
-limparConversaPreIA();
+await limparConversaPreIA();
 
       /*
        * Da segunda vez em diante,
