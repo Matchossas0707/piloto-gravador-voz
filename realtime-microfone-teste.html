@@ -750,19 +750,20 @@ function aguardarCadastroFinalPreIA(
        * a transcrição final.
        */
       if (
-        preInterpretacaoTextoEmAndamento
-      ) {
-        canalPreInterpretacao.send(
-          JSON.stringify({
-            type: 'response.cancel'
-          })
-        );
+  preInterpretacaoTextoEmAndamento
+) {
+  /*
+   * Não cancelamos.
+   * Esperamos a resposta incremental
+   * terminar naturalmente.
+   *
+   * O response.done já existente
+   * disparará a análise FINAL logo depois.
+   */
+  return;
+}
 
-        return;
-      }
-
-
-      dispararCadastroFinalPreIA();
+dispararCadastroFinalPreIA();
     }
   );
 }
