@@ -1317,54 +1317,6 @@ pc.addTransceiver(
 
   return;
 }
-  processarEventoPreInterpretacao(
-    dados,
-    dc
-  );
-       preInterpretacaoTextoEmAndamento =
-  false;
-
-if (preInterpretacaoTextoPendente) {
-  preInterpretacaoTextoPendente =
-    false;
-
-  agendarPreInterpretacaoTexto();
-}
-
-  if (
-    !cadastroProvisorio &&
-    caixa
-  ) {
-    const resposta =
-      dados.response || {};
-
-    const saidas =
-      Array.isArray(resposta.output)
-        ? resposta.output
-            .map(function (item) {
-              return (
-                item.type +
-                (
-                  item.name
-                    ? ' → ' + item.name
-                    : ''
-                )
-              );
-            })
-            .join(', ')
-        : '';
-
-    caixa.textContent =
-      'Pré-IA: resposta sem cadastro.\n\n' +
-      'Status: ' +
-      (resposta.status || '-') +
-      '\nSaída: ' +
-      (saidas || 'vazia');
-  }
-
-  return;
-}
-
     } catch (erro) {
       console.error(
         '[PRE-IA] Evento inválido',
