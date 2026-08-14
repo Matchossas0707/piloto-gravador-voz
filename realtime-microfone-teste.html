@@ -3646,15 +3646,16 @@
         }
 
         /*
-         * Além da origem Google, exigimos que a mensagem venha
-         * exatamente do iframe criado para ESTE POST. Evita aceitar
-         * uma resposta de outra janela/iframe Google aberto na página.
+         * O HtmlService do Apps Script pode entregar o HTML final dentro
+         * de um iframe interno googleusercontent.com. Nesse caso,
+         * evento.source não é necessariamente o contentWindow do iframe
+         * externo criado pelo GitHub. A validação anterior descartava a
+         * resposta legítima mesmo depois de o cadastro já ter sido gravado.
+         *
+         * Segurança preservada por: origem Google + tipo da mensagem +
+         * requestId aleatório exclusivo deste POST.
          */
-        if (
-          !iframeCadastroAtual ||
-          evento.source !==
-            iframeCadastroAtual.contentWindow
-        ) {
+        if (!iframeCadastroAtual) {
           return;
         }
 
