@@ -424,7 +424,19 @@
       INTERVALO_PRE_IA_MS:
         450,
 
-      /* No máximo 3 snapshots pagos durante a fala. */
+      /*
+       * Depois de duas análises normais, a terceira fica reservada
+       * para um provável fechamento do atendimento e pode começar
+       * mais cedo após a última palavra. Isso tenta esconder a
+       * latência da FLASH atrás do fechamento da transcrição.
+       */
+      INTERVALO_PRE_IA_RESERVA_FINAL_MS:
+        225,
+
+      MAX_PRE_IA_INCREMENTAIS_ANTECIPADAS:
+        2,
+
+      /* No máximo 3 snapshots incrementais pagos durante a fala. */
       MAX_PRE_IA_INCREMENTAIS:
         3,
 
@@ -2649,6 +2661,39 @@
     }
 
 
+    function textoTemSinalFechamentoFlash(
+      texto
+    ) {
+      const normalizado =
+        normalizarTextoComparacao(
+          texto
+        );
+
+      if (!normalizado) {
+        return false;
+      }
+
+      /*
+       * Heurística SOMENTE de timing. Não interpreta nem cadastra
+       * nada. Ela apenas identifica expressões que, na rotina da
+       * Piloto, costumam aparecer perto do fim do atendimento para
+       * preservar a terceira análise da FLASH para esse momento.
+       * Se errar, a validação final e o fallback continuam intactos.
+       */
+      return (
+        /\b(?:pix|dinheiro|debito|credito|boleto|transferencia)\b/.test(
+          normalizado
+        ) ||
+        /\b(?:so|somente|apenas)\s+(?:esses|essas|isso|estes|estas)\b/.test(
+          normalizado
+        ) ||
+        /\b(?:pode\s+cadastrar|pode\s+fechar|e\s+isso|so\s+isso)\b/.test(
+          normalizado
+        )
+      );
+    }
+
+
     function agendarPreIAIncremental(
       imediato = false
     ) {
@@ -2678,11 +2723,25 @@
           null;
       }
 
+      const textoAtual =
+        String(
+          textoParcial || ''
+        ).trim();
+
+      const usarReservaFinal =
+        !imediato &&
+        textoTemSinalFechamentoFlash(
+          textoAtual
+        );
+
       const atraso =
         imediato
           ? 0
-          : CONFIG
-              .INTERVALO_PRE_IA_MS;
+          : usarReservaFinal
+            ? CONFIG
+                .INTERVALO_PRE_IA_RESERVA_FINAL_MS
+            : CONFIG
+                .INTERVALO_PRE_IA_MS;
 
       timerPreIA =
         setTimeout(
@@ -2721,6 +2780,24 @@
       if (
         preIncrementaisDisparadas >=
           CONFIG.MAX_PRE_IA_INCREMENTAIS
+      ) {
+        return;
+      }
+
+      /*
+       * Reserva a terceira análise incremental para um provável
+       * fechamento. Se o atendimento não trouxer um desses sinais,
+       * simplesmente não gastamos a terceira cedo: no clique em
+       * Finalizar a solicitação especulativa/fallback já existente
+       * continua garantindo a correção.
+       */
+      if (
+        preIncrementaisDisparadas >=
+          CONFIG
+            .MAX_PRE_IA_INCREMENTAIS_ANTECIPADAS &&
+        !textoTemSinalFechamentoFlash(
+          texto
+        )
       ) {
         return;
       }
