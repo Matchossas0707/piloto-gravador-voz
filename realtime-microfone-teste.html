@@ -2057,10 +2057,36 @@ if (preIAJaPronta) {
    * mantemos por enquanto o fluxo
    * final que já existe.
    */
+ let interpretacaoFinalPreIA = null;
+
+const preIAJaPronta =
+  interpretacaoPreIAValida(
+    cadastroProvisorio
+  ) &&
+  !preInterpretacaoTextoEmAndamento &&
+  !preInterpretacaoTextoPendente &&
+  !timerPreInterpretacaoTexto &&
+  String(
+    ultimoTextoEnviadoPreIA || ''
+  ).trim() ===
+  String(
+    textoParcial || ''
+  ).trim();
+
+if (preIAJaPronta) {
+  interpretacaoFinalPreIA =
+    cadastroProvisorio;
+
+  console.log(
+    '[PRE-IA FINAL] Cadastro já estava pronto.'
+  );
+
+} else {
   interpretacaoFinalPreIA =
     await aguardarCadastroFinalPreIA(
       textoFinal
     );
+}
 }
 
 if (
