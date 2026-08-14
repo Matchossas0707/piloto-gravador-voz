@@ -415,8 +415,14 @@
       URL_REALTIME:
         'https://api.openai.com/v1/realtime/calls',
 
+      /*
+       * Snapshot textual após uma pequena pausa. Com debounce real,
+       * 450 ms tende a capturar a frase já completa antes do clique
+       * em Finalizar, escondendo a latência da FLASH sem aumentar
+       * o teto de chamadas pagas.
+       */
       INTERVALO_PRE_IA_MS:
-        900,
+        450,
 
       /* No máximo 3 snapshots pagos durante a fala. */
       MAX_PRE_IA_INCREMENTAIS:
@@ -424,7 +430,7 @@
 
       /* Evita reanalisar por mudanças minúsculas do transcript. */
       MIN_CRESCIMENTO_PRE_IA_CARACTERES:
-        24,
+        12,
 
       MIN_CARACTERES_PRE_IA:
         15,
@@ -2656,10 +2662,14 @@
       if (
         timerPreIA
       ) {
-        if (!imediato) {
-          return;
-        }
-
+        /*
+         * Debounce de verdade: a cada novo trecho da transcrição
+         * deslocamos o snapshot para frente. Assim a FLASH recebe
+         * um texto mais completo depois de uma pequena pausa, em vez
+         * de gastar as três análises cedo demais no atendimento.
+         *
+         * O modo imediato continua cancelando a espera e dispara já.
+         */
         clearTimeout(
           timerPreIA
         );
