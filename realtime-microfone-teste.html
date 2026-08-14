@@ -1,18 +1,11 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1"
-  >
-
-  <title>
-    Teste Realtime — Piloto
-  </title>
-
-  <style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>Cadastro por voz — Autoescola Piloto</title>
+<style>
     :root {
       color-scheme: light;
       --piloto: #f47b20;
@@ -255,46 +248,6 @@
       font-size: 15px;
     }
 
-    details {
-      margin-top: 22px;
-      border: 1px solid var(--borda);
-      border-radius: 16px;
-      background: #fbfdff;
-      overflow: hidden;
-    }
-
-    summary {
-      cursor: pointer;
-      padding: 14px 16px;
-      color: #475569;
-      font-size: 13px;
-      font-weight: 750;
-      user-select: none;
-    }
-
-    details[open] summary {
-      border-bottom: 1px solid var(--borda);
-    }
-
-    #preIa {
-      margin: 0;
-      padding: 15px 16px;
-      max-height: 270px;
-      overflow: auto;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      background: white;
-      color: #334155;
-      font-family:
-        ui-monospace,
-        SFMono-Regular,
-        Menlo,
-        Consolas,
-        monospace;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
     .rodape-ajuda {
       margin: 18px 2px 0;
       color: var(--texto-suave);
@@ -335,1244 +288,382 @@
     }
   </style>
 </head>
-
 <body>
   <main>
     <div class="marca">Autoescola Piloto</div>
-
     <h1>Cadastro por voz</h1>
-
     <p class="subtitulo">
       Inicie o atendimento, converse normalmente e finalize
       somente quando todos os dados estiverem confirmados.
     </p>
 
     <div class="acoes">
-      <button
-        id="iniciar"
-        type="button"
-      >
-        Iniciar atendimento
-      </button>
-
-      <button
-        id="finalizar"
-        type="button"
-        disabled
-      >
-        Finalizar e cadastrar
-      </button>
+      <button id="iniciar" type="button">Iniciar atendimento</button>
+      <button id="finalizar" type="button" disabled>Finalizar e cadastrar</button>
     </div>
 
-    <div
-      id="status"
-      role="status"
-      aria-live="polite"
-    >
-      Aguardando início.
-    </div>
-
-    <div
-      id="metricas"
-      aria-live="polite"
-    ></div>
+    <div id="status" role="status" aria-live="polite">Aguardando início.</div>
+    <div id="metricas" aria-live="polite"></div>
 
     <section class="secao" aria-labelledby="titulo-transcricao">
       <div class="secao-cabecalho">
-        <h2 id="titulo-transcricao">Transcrição ao vivo</h2>
+        <h2 id="titulo-transcricao">Transcrição</h2>
         <span class="apoio">Fonte autoritativa dos nomes</span>
       </div>
-
-      <div id="transcricao">
-        A transcrição aparecerá aqui.
-      </div>
+      <div id="transcricao">A transcrição aparecerá aqui.</div>
     </section>
 
-    <details>
-      <summary>Diagnóstico técnico da Pré-IA</summary>
-      <pre id="preIa">Aguardando atendimento...</pre>
-    </details>
-
     <p class="rodape-ajuda">
-      A interpretação acontece em paralelo durante a conversa.
-      O sistema prioriza o caminho rápido quando o resultado é
-      seguro e mantém o fallback como proteção.
+      Modo econômico: casos simples são interpretados localmente, sem IA.
+      Casos complexos usam uma única análise final de baixo custo.
     </p>
   </main>
 
   <script>
     'use strict';
 
-
-    // =========================================================
-    // CONFIGURAÇÃO
-    // =========================================================
-
     const CONFIG = Object.freeze({
       URL_APPS_SCRIPT:
         'https://script.google.com/macros/s/AKfycbwpPUKzLliOfyaSmpi1Lgyzgv2lA4Di-VE-8hw6KbvKbsBU3dJxl-TMrwghHmHmkWFv/exec',
-
       URL_REALTIME:
         'https://api.openai.com/v1/realtime/calls',
-
-      INTERVALO_PRE_IA_MS:
-        800,
-
-      MIN_CARACTERES_PRE_IA:
-        15,
-
-      TIMEOUT_PRE_IA_FINAL_MS:
-        2200,
-
-      TIMEOUT_TOKEN_MS:
-        15000,
-
-      TIMEOUT_CANAL_MS:
-        12000,
-
-      TIMEOUT_HANDSHAKE_MS:
-        12000,
-
-      TIMEOUT_TRANSCRICAO_FINAL_MS:
-        12000,
-
-      /*
-       * O servidor pode aguardar até 30 s pelo ScriptLock.
-       * A UI dá uma margem adicional para não declarar timeout
-       * justamente quando uma escrita concorrente está concluindo.
-       */
-      TIMEOUT_CADASTRO_MS:
-        45000,
-
-      /*
-       * Sessões Realtime têm limite de vida.
-       * Recriamos com folga antes de 60 min.
-       */
+      TIMEOUT_TOKEN_MS: 15000,
+      TIMEOUT_CANAL_MS: 12000,
+      TIMEOUT_HANDSHAKE_MS: 12000,
+      TIMEOUT_TRANSCRICAO_FINAL_MS: 12000,
+      TIMEOUT_CADASTRO_MS: 45000,
       MAX_IDADE_CONEXAO_REALTIME_MS:
-        50 * 60 * 1000,
-
-      DEBOUNCE_PRE_FINAL_MS:
-        60
+        50 * 60 * 1000
     });
 
-
-    // =========================================================
-    // ELEMENTOS
-    // =========================================================
-
     const botaoIniciar =
-      document.getElementById(
-        'iniciar'
-      );
-
+      document.getElementById('iniciar');
     const botaoFinalizar =
-      document.getElementById(
-        'finalizar'
-      );
-
+      document.getElementById('finalizar');
     const statusElemento =
-      document.getElementById(
-        'status'
-      );
-
+      document.getElementById('status');
     const metricasElemento =
-      document.getElementById(
-        'metricas'
-      );
-
-    const preIaElemento =
-      document.getElementById(
-        'preIa'
-      );
-
+      document.getElementById('metricas');
     const transcricaoElemento =
-      document.getElementById(
-        'transcricao'
-      );
-
-
-    // =========================================================
-    // ESTADO — MICROFONE + TRANSCRIÇÃO
-    // =========================================================
+      document.getElementById('transcricao');
 
     let fluxoMicrofone = null;
     let faixaMicrofone = null;
-
     let conexaoTranscricao = null;
     let canalTranscricao = null;
-
-    let promessaConexaoTranscricao =
-      null;
-
-    let conexaoTranscricaoCriadaEm =
-      0;
-
-    let tokenTranscricaoPrefetch =
-      null;
-
-    let promessaTokenTranscricaoPrefetch =
-      null;
+    let promessaConexaoTranscricao = null;
+    let conexaoTranscricaoCriadaEm = 0;
+    let tokenTranscricaoPrefetch = null;
+    let promessaTokenTranscricaoPrefetch = null;
 
     let atendimentoAtivo = false;
     let finalizando = false;
-
-    let atendimentoId = 0;
-
     let textoParcial = '';
-
+    let itemIdTranscricaoAtual = null;
+    let itemIdTranscricaoCommitFinal = null;
+    let transcricaoFinalProcessada = false;
+    let timeoutTranscricaoFinal = null;
+    let primeiraDeltaRecebida = false;
     let inicioClique = 0;
     let inicioFinalizacao = 0;
 
-    let primeiraDeltaRecebida =
-      false;
-
-    /*
-     * Correlação do turno de transcrição.
-     * A conexão WebRTC é reutilizada entre atendimentos, então
-     * um evento atrasado de um item anterior nunca pode ser
-     * aceito como transcrição final do atendimento atual.
-     */
-    let itemIdTranscricaoAtual =
-      null;
-
-    let itemIdTranscricaoCommitFinal =
-      null;
-
-    let transcricaoFinalProcessada =
-      false;
-
-    let timeoutTranscricaoFinal =
-      null;
-
-
-    // =========================================================
-    // ESTADO — PRÉ-IA
-    // =========================================================
-
-    let conexaoPreIA = null;
-    let canalPreIA = null;
-
-    let promessaConexaoPreIA =
-      null;
-
-    let conexaoPreIACriadaEm =
-      0;
-
-    let timerPreIA = null;
-
-    let timerPreFinalEspeculativa =
-      null;
-
-    let preIncrementalSeqAtual =
-      null;
-
-    let preIncrementalTimeout =
-      null;
-
-    let preIncrementalPendente =
-      false;
-
-    let preSeq = 0;
-
-    let maiorSeqPreIAAplicada =
-      0;
-
-    let ultimoResultadoPreIA =
-      null;
-
-    let preFinalEspeculativa =
-      null;
-
-    let tempoPreIAFinalUltimo =
-      0;
-
-    const requisicoesPreIA =
-      new Map();
-
-    const responseIdParaSeq =
-      new Map();
-
-    const esperasPreIAFinal =
-      new Map();
-
-
-    // =========================================================
-    // ESTADO — CADASTRO VIA APPS SCRIPT
-    // =========================================================
-
-    let cadastroEmAndamento =
-      false;
-
+    let cadastroEmAndamento = false;
     let cadastroAtual = null;
+    let iframeCadastroAtual = null;
+    let timeoutCadastro = null;
 
-    let iframeCadastroAtual =
-      null;
-
-    let timeoutCadastro =
-      null;
-
-
-    // =========================================================
-    // UI / HELPERS
-    // =========================================================
-
-    function definirStatus(
-      mensagem,
-      tipo = ''
-    ) {
-      statusElemento.textContent =
-        mensagem;
-
-      statusElemento.className =
-        tipo;
+    function definirStatus(mensagem, tipo = '') {
+      statusElemento.textContent = mensagem;
+      statusElemento.className = tipo;
     }
 
-
-    function mostrarMetricas(
-      texto
-    ) {
-      metricasElemento.textContent =
-        texto;
+    function mostrarMetricas(texto) {
+      metricasElemento.textContent = texto;
     }
 
-
-    function mostrarPreIA(
-      cadastro,
-      rotulo = 'Pré-IA — cadastro provisório'
-    ) {
-      if (!cadastro) {
-        preIaElemento.textContent =
-          'Aguardando informações...';
-
-        return;
-      }
-
-      preIaElemento.textContent =
-        rotulo +
-        ':\n\n' +
-        JSON.stringify(
-          cadastro,
-          null,
-          2
-        );
-    }
-
-
-    function gerarId(
-      prefixo
-    ) {
+    function gerarId(prefixo) {
       if (
         window.crypto &&
-        typeof window.crypto.randomUUID ===
-          'function'
+        typeof window.crypto.randomUUID === 'function'
       ) {
-        return (
-          prefixo +
-          '_' +
-          window.crypto.randomUUID()
-        );
+        return prefixo + '_' + window.crypto.randomUUID();
       }
 
       return (
-        prefixo +
-        '_' +
-        Date.now() +
-        '_' +
-        Math.random()
-          .toString(36)
-          .slice(2)
+        prefixo + '_' + Date.now() + '_' +
+        Math.random().toString(36).slice(2)
       );
     }
 
-
-    function normalizarTextoComparacao(
-      valor
-    ) {
-      return String(
-        valor || ''
-      )
-        .normalize('NFD')
-        .replace(
-          /[\u0300-\u036f]/g,
-          ''
-        )
-        .toLowerCase()
-        .replace(
-          /[^a-z0-9]+/g,
-          ' '
-        )
-        .replace(
-          /\s+/g,
-          ' '
-        )
-        .trim();
+    function limparTimeoutTranscricaoFinal() {
+      if (timeoutTranscricaoFinal) {
+        clearTimeout(timeoutTranscricaoFinal);
+        timeoutTranscricaoFinal = null;
+      }
     }
 
+    function solicitarJsonp(acao) {
+      return new Promise(function (resolve, reject) {
+        const callback =
+          '__piloto_' +
+          acao.replace(/[^A-Za-z0-9_$]/g, '_') +
+          '_' + Date.now() + '_' +
+          Math.random().toString(36).slice(2);
 
-    function normalizarTranscricaoParaReuso(
-      valor
-    ) {
-      /*
-       * Reuso precisa ser conservador porque a transcrição final
-       * é a fonte autoritativa dos nomes. Preservamos acentos,
-       * CAIXA e pontuação interna comum de nomes (apóstrofo/hífen).
-       * Removemos apenas pontuação que funciona como separador de
-       * frase. Assim "João" != "joão" e "D'Ávila" != "D Ávila",
-       * mas uma vírgula final não obriga uma nova interpretação.
-       */
-      return String(
-        valor || ''
-      )
-        .normalize('NFC')
-        .replace(
-          /[^\p{L}\p{N}'’\-\s]+/gu,
-          ' '
-        )
-        .replace(
-          /\s+/g,
-          ' '
-        )
-        .trim();
-    }
+        const script = document.createElement('script');
+        let finalizado = false;
 
+        const timeout = setTimeout(function () {
+          limpar();
+          reject(new Error(
+            'O Apps Script demorou demais para entregar a credencial Realtime.'
+          ));
+        }, CONFIG.TIMEOUT_TOKEN_MS);
 
-    function textosEquivalentes(
-      a,
-      b
-    ) {
-      const textoA =
-        normalizarTranscricaoParaReuso(
-          a
-        );
-
-      const textoB =
-        normalizarTranscricaoParaReuso(
-          b
-        );
-
-      return (
-        textoA !== '' &&
-        textoA === textoB
-      );
-    }
-
-
-    function interpretacaoPreIAValida(
-      interpretacao
-    ) {
-      if (
-        !interpretacao ||
-        typeof interpretacao !==
-          'object' ||
-        Array.isArray(
-          interpretacao
-        )
-      ) {
-        return false;
-      }
-
-      const temResponsavel =
-        Boolean(
-          String(
-            interpretacao
-              .autoescola || ''
-          ).trim() ||
-          String(
-            interpretacao
-              .instrutor || ''
-          ).trim()
-        );
-
-      if (!temResponsavel) {
-        return false;
-      }
-
-      const alunos =
-        Array.isArray(
-          interpretacao.alunos
-        )
-          ? interpretacao.alunos
-              .map(
-                function (aluno) {
-                  return {
-                    nome:
-                      String(
-                        aluno &&
-                        aluno.nome
-                          ? aluno.nome
-                          : ''
-                      ).trim(),
-
-                    pagamento:
-                      String(
-                        aluno &&
-                        (
-                          aluno.forma_pagamento ||
-                          aluno.formaPagamento
-                        )
-                          ? (
-                              aluno.forma_pagamento ||
-                              aluno.formaPagamento
-                            )
-                          : ''
-                      ).trim()
-                  };
-                }
-              )
-              .filter(
-                function (aluno) {
-                  return aluno.nome !== '';
-                }
-              )
-          : [];
-
-      if (alunos.length === 0) {
-        return false;
-      }
-
-      const nomesVistos =
-        new Set();
-
-      const pagamentosValidos =
-        new Set([
-          '',
-          'pix',
-          'dinheiro',
-          'debito',
-          'credito',
-          'boleto',
-          'transferencia'
-        ]);
-
-      for (
-        const aluno of alunos
-      ) {
-        const chaveNome =
-          normalizarTextoComparacao(
-            aluno.nome
-          );
-
-        if (
-          !chaveNome ||
-          nomesVistos.has(
-            chaveNome
-          )
-        ) {
-          return false;
+        function limpar() {
+          if (finalizado) return;
+          finalizado = true;
+          clearTimeout(timeout);
+          script.remove();
+          try {
+            delete window[callback];
+          } catch (erro) {
+            window[callback] = undefined;
+          }
         }
 
-        nomesVistos.add(
-          chaveNome
-        );
+        window[callback] = function (dados) {
+          limpar();
 
-        const pagamento =
-          normalizarTextoComparacao(
-            aluno.pagamento
-          );
-
-        if (
-          !pagamentosValidos.has(
-            pagamento
-          )
-        ) {
-          return false;
-        }
-      }
-
-      const duvidas =
-        Array.isArray(
-          interpretacao.duvidas
-        )
-          ? interpretacao.duvidas
-              .map(
-                function (item) {
-                  return String(
-                    item || ''
-                  ).trim();
-                }
-              )
-              .filter(Boolean)
-          : [];
-
-      if (duvidas.length > 0) {
-        return false;
-      }
-
-      const quantidadeOriginal =
-        interpretacao
-          .quantidade_mencionada;
-
-      const quantidade =
-        quantidadeOriginal ===
-          null ||
-        quantidadeOriginal ===
-          undefined ||
-        quantidadeOriginal === ''
-          ? 0
-          : Number(
-              quantidadeOriginal
-            );
-
-      if (
-        !Number.isInteger(
-          quantidade
-        ) ||
-        quantidade < 0
-      ) {
-        return false;
-      }
-
-      if (
-        quantidade > 0 &&
-        quantidade !==
-          alunos.length
-      ) {
-        return false;
-      }
-
-      const dataExame =
-        String(
-          interpretacao
-            .data_exame || ''
-        ).trim();
-
-      if (dataExame) {
-        let ano;
-        let mes;
-        let dia;
-
-        let partes =
-          dataExame.match(
-            /^(\d{4})-(\d{1,2})-(\d{1,2})$/
-          );
-
-        if (partes) {
-          ano = Number(partes[1]);
-          mes = Number(partes[2]);
-          dia = Number(partes[3]);
-
-        } else {
-          partes =
-            dataExame.match(
-              /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
-            );
-
-          if (!partes) {
-            return false;
+          if (!dados || dados.sucesso !== true || !dados.token) {
+            reject(new Error(
+              dados && dados.erro
+                ? dados.erro
+                : 'Credencial Realtime inválida.'
+            ));
+            return;
           }
 
-          dia = Number(partes[1]);
-          mes = Number(partes[2]);
-          ano = Number(partes[3]);
-        }
+          resolve({
+            token: dados.token,
+            recebidoEm: Date.now(),
+            modelo: dados.modelo || '',
+            expiraEm: dados.expiraEm || null
+          });
+        };
 
-        const data =
-          new Date(
-            ano,
-            mes - 1,
-            dia,
-            12,
-            0,
-            0,
-            0
-          );
+        script.onerror = function () {
+          limpar();
+          reject(new Error(
+            'Falha ao buscar a credencial Realtime.'
+          ));
+        };
 
-        if (
-          data.getFullYear() !== ano ||
-          data.getMonth() !==
-            mes - 1 ||
-          data.getDate() !== dia
-        ) {
-          return false;
-        }
-      }
+        script.src =
+          CONFIG.URL_APPS_SCRIPT +
+          '?acao=' + encodeURIComponent(acao) +
+          '&callback=' + encodeURIComponent(callback) +
+          '&t=' + Date.now();
 
-      return true;
+        document.head.appendChild(script);
+      });
     }
-
-
-    // =========================================================
-    // JSONP — TOKENS EFÊMEROS
-    // =========================================================
-
-    function solicitarJsonp(
-      acao
-    ) {
-      return new Promise(
-        function (
-          resolve,
-          reject
-        ) {
-          const callback =
-            '__piloto_' +
-            acao.replace(
-              /[^A-Za-z0-9_$]/g,
-              '_'
-            ) +
-            '_' +
-            Date.now() +
-            '_' +
-            Math.random()
-              .toString(36)
-              .slice(2);
-
-          const script =
-            document.createElement(
-              'script'
-            );
-
-          let finalizado =
-            false;
-
-          const limpar =
-            function () {
-              if (finalizado) {
-                return;
-              }
-
-              finalizado = true;
-
-              clearTimeout(
-                timeout
-              );
-
-              script.remove();
-
-              try {
-                delete window[
-                  callback
-                ];
-              } catch (erro) {
-                window[
-                  callback
-                ] = undefined;
-              }
-            };
-
-          window[callback] =
-            function (dados) {
-              limpar();
-
-              if (
-                !dados ||
-                dados.sucesso !==
-                  true ||
-                !dados.token
-              ) {
-                reject(
-                  new Error(
-                    dados &&
-                    dados.erro
-                      ? dados.erro
-                      : 'Credencial Realtime inválida.'
-                  )
-                );
-
-                return;
-              }
-
-              resolve({
-                token:
-                  dados.token,
-
-                recebidoEm:
-                  Date.now(),
-
-                modelo:
-                  dados.modelo ||
-                  '',
-
-                expiraEm:
-                  dados.expiraEm ||
-                  null
-              });
-            };
-
-          script.onerror =
-            function () {
-              limpar();
-
-              reject(
-                new Error(
-                  'Falha ao buscar a credencial Realtime.'
-                )
-              );
-            };
-
-          const timeout =
-            setTimeout(
-              function () {
-                limpar();
-
-                reject(
-                  new Error(
-                    'O Apps Script demorou demais para entregar a credencial Realtime.'
-                  )
-                );
-              },
-
-              CONFIG
-                .TIMEOUT_TOKEN_MS
-            );
-
-          script.src =
-            CONFIG
-              .URL_APPS_SCRIPT +
-            '?acao=' +
-            encodeURIComponent(
-              acao
-            ) +
-            '&callback=' +
-            encodeURIComponent(
-              callback
-            ) +
-            '&t=' +
-            Date.now();
-
-          document.head
-            .appendChild(
-              script
-            );
-        }
-      );
-    }
-
 
     function credencialRealtimeAindaValida(
       credencial,
       margemSegundos = 30
     ) {
-      if (
-        !credencial ||
-        !credencial.token
-      ) {
-        return false;
-      }
+      if (!credencial || !credencial.token) return false;
 
       if (!credencial.expiraEm) {
-        return (
-          Date.now() -
-          credencial.recebidoEm <
-          45000
-        );
+        return Date.now() - credencial.recebidoEm < 45000;
       }
 
-      const expiraMs =
-        Number(
-          credencial.expiraEm
-        ) * 1000;
-
+      const expiraMs = Number(credencial.expiraEm) * 1000;
       return (
-        Number.isFinite(
-          expiraMs
-        ) &&
-        expiraMs - Date.now() >
-          margemSegundos * 1000
+        Number.isFinite(expiraMs) &&
+        expiraMs - Date.now() > margemSegundos * 1000
       );
     }
 
-
     function preaquecerTokenTranscricao() {
       if (
-        credencialRealtimeAindaValida(
-          tokenTranscricaoPrefetch
-        ) ||
+        credencialRealtimeAindaValida(tokenTranscricaoPrefetch) ||
         promessaTokenTranscricaoPrefetch
       ) {
         return;
       }
 
       promessaTokenTranscricaoPrefetch =
-        solicitarJsonp(
-          'tokenRealtimeTeste'
-        )
-          .then(
-            function (credencial) {
-              tokenTranscricaoPrefetch =
-                credencial;
-
-              return credencial;
-            }
-          )
-          .catch(
-            function (erro) {
-              console.warn(
-                '[TRANSCRIÇÃO] Pré-busca de credencial indisponível:',
-                erro
-              );
-
-              return null;
-            }
-          )
-          .finally(
-            function () {
-              promessaTokenTranscricaoPrefetch =
-                null;
-            }
-          );
+        solicitarJsonp('tokenRealtimeTeste')
+          .then(function (credencial) {
+            tokenTranscricaoPrefetch = credencial;
+            return credencial;
+          })
+          .catch(function (erro) {
+            console.warn(
+              '[TRANSCRIÇÃO] Pré-busca de credencial indisponível:',
+              erro
+            );
+            return null;
+          })
+          .finally(function () {
+            promessaTokenTranscricaoPrefetch = null;
+          });
     }
 
-
     async function obterTokenTranscricao() {
-      if (
-        credencialRealtimeAindaValida(
-          tokenTranscricaoPrefetch
-        )
-      ) {
-        const credencial =
-          tokenTranscricaoPrefetch;
-
-        tokenTranscricaoPrefetch =
-          null;
-
+      if (credencialRealtimeAindaValida(tokenTranscricaoPrefetch)) {
+        const credencial = tokenTranscricaoPrefetch;
+        tokenTranscricaoPrefetch = null;
         return credencial;
       }
 
-      if (
-        promessaTokenTranscricaoPrefetch
-      ) {
-        const credencial =
-          await promessaTokenTranscricaoPrefetch;
-
-        if (
-          credencialRealtimeAindaValida(
-            credencial
-          )
-        ) {
-          tokenTranscricaoPrefetch =
-            null;
-
+      if (promessaTokenTranscricaoPrefetch) {
+        const credencial = await promessaTokenTranscricaoPrefetch;
+        if (credencialRealtimeAindaValida(credencial)) {
+          tokenTranscricaoPrefetch = null;
           return credencial;
         }
       }
 
-      return solicitarJsonp(
-        'tokenRealtimeTeste'
-      );
+      return solicitarJsonp('tokenRealtimeTeste');
     }
-
-
-    // =========================================================
-    // MICROFONE
-    // =========================================================
 
     function microfoneDisponivel() {
       return Boolean(
         faixaMicrofone &&
-        faixaMicrofone
-          .readyState === 'live'
+        faixaMicrofone.readyState === 'live'
       );
     }
-
 
     function silenciarMicrofone() {
-      if (faixaMicrofone) {
-        faixaMicrofone.enabled =
-          false;
-      }
+      if (faixaMicrofone) faixaMicrofone.enabled = false;
     }
-
 
     function ativarMicrofone() {
-      if (faixaMicrofone) {
-        faixaMicrofone.enabled =
-          true;
-      }
+      if (faixaMicrofone) faixaMicrofone.enabled = true;
     }
 
-
     async function obterMicrofone() {
-      if (
-        microfoneDisponivel()
-      ) {
-        return fluxoMicrofone;
-      }
+      if (microfoneDisponivel()) return fluxoMicrofone;
 
-      fluxoMicrofone =
-        await navigator
-          .mediaDevices
-          .getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          });
-
-      faixaMicrofone =
-        fluxoMicrofone
-          .getAudioTracks()[0];
-
-      const faixaObtida =
-        faixaMicrofone;
-
-      /*
-       * Se o sistema operacional/navegador encerrar a captura
-       * (permissão revogada, troca de dispositivo, interrupção),
-       * não deixamos a UI fingir que ainda está gravando.
-       */
-      faixaObtida.addEventListener(
-        'ended',
-        function () {
-          if (
-            faixaMicrofone !==
-            faixaObtida
-          ) {
-            return;
-          }
-
-          faixaMicrofone = null;
-          fluxoMicrofone = null;
-
-          fecharConexaoTranscricao();
-
-          if (
-            atendimentoAtivo ||
-            finalizando
-          ) {
-            falhar(
-              'O microfone foi interrompido. Toque em Iniciar para reconectar antes de continuar.'
-            );
-          }
+      fluxoMicrofone = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
         }
-      );
+      });
+
+      faixaMicrofone = fluxoMicrofone.getAudioTracks()[0];
+
+      faixaMicrofone.addEventListener('ended', function () {
+        if (atendimentoAtivo || finalizando) {
+          falhar(
+            'O microfone foi interrompido. Toque em Iniciar para reconectar.'
+          );
+        }
+      });
 
       silenciarMicrofone();
-
       return fluxoMicrofone;
     }
 
-
-    // =========================================================
-    // WEBRTC — HELPERS
-    // =========================================================
-
-    function aguardarCanalAberto(
-      canal,
-      mensagemErro
-    ) {
-      return new Promise(
-        function (
-          resolve,
-          reject
-        ) {
-          if (
-            canal.readyState ===
-            'open'
-          ) {
-            resolve();
-            return;
-          }
-
-          const timeout =
-            setTimeout(
-              function () {
-                reject(
-                  new Error(
-                    mensagemErro
-                  )
-                );
-              },
-              CONFIG
-                .TIMEOUT_CANAL_MS
-            );
-
-          canal.addEventListener(
-            'open',
-            function () {
-              clearTimeout(
-                timeout
-              );
-
-              resolve();
-            },
-            {
-              once: true
-            }
-          );
-
-          canal.addEventListener(
-            'error',
-            function () {
-              clearTimeout(
-                timeout
-              );
-
-              reject(
-                new Error(
-                  mensagemErro
-                )
-              );
-            },
-            {
-              once: true
-            }
-          );
-
-
-          canal.addEventListener(
-            'close',
-            function () {
-              clearTimeout(
-                timeout
-              );
-
-              reject(
-                new Error(
-                  mensagemErro
-                )
-              );
-            },
-            {
-              once: true
-            }
-          );
+    function aguardarCanalAberto(canal, mensagemErro) {
+      return new Promise(function (resolve, reject) {
+        if (canal.readyState === 'open') {
+          resolve();
+          return;
         }
-      );
+
+        const timeout = setTimeout(function () {
+          reject(new Error(mensagemErro));
+        }, CONFIG.TIMEOUT_CANAL_MS);
+
+        canal.addEventListener('open', function () {
+          clearTimeout(timeout);
+          resolve();
+        }, { once: true });
+
+        canal.addEventListener('error', function () {
+          clearTimeout(timeout);
+          reject(new Error(mensagemErro));
+        }, { once: true });
+
+        canal.addEventListener('close', function () {
+          clearTimeout(timeout);
+          reject(new Error(mensagemErro));
+        }, { once: true });
+      });
     }
 
+    async function completarHandshake(pc, token) {
+      const oferta = await pc.createOffer();
+      await pc.setLocalDescription(oferta);
 
-    async function completarHandshake(
-      pc,
-      token
-    ) {
-      const oferta =
-        await pc.createOffer();
-
-      await pc
-        .setLocalDescription(
-          oferta
-        );
-
-      const controlador =
-        new AbortController();
-
-      const timeout =
-        setTimeout(
-          function () {
-            controlador.abort();
-          },
-          CONFIG
-            .TIMEOUT_HANDSHAKE_MS
-        );
+      const controlador = new AbortController();
+      const timeout = setTimeout(function () {
+        controlador.abort();
+      }, CONFIG.TIMEOUT_HANDSHAKE_MS);
 
       try {
-        const resposta =
-          await fetch(
-            CONFIG.URL_REALTIME,
-            {
-              method: 'POST',
-
-              headers: {
-                Authorization:
-                  'Bearer ' +
-                  token,
-
-                'Content-Type':
-                  'application/sdp'
-              },
-
-              body:
-                oferta.sdp,
-
-              signal:
-                controlador.signal
-            }
-          );
+        const resposta = await fetch(CONFIG.URL_REALTIME, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/sdp'
+          },
+          body: oferta.sdp,
+          signal: controlador.signal
+        });
 
         if (!resposta.ok) {
-          const detalhe =
-            await resposta.text();
-
+          const detalhe = await resposta.text();
           throw new Error(
             'Falha no WebRTC — HTTP ' +
-            resposta.status +
-            ': ' +
-            detalhe
+            resposta.status + ': ' + detalhe
           );
         }
 
-        const sdp =
-          await resposta.text();
-
-        await pc
-          .setRemoteDescription({
-            type: 'answer',
-            sdp: sdp
-          });
-
+        const sdp = await resposta.text();
+        await pc.setRemoteDescription({
+          type: 'answer',
+          sdp: sdp
+        });
       } catch (erro) {
-        if (
-          erro &&
-          erro.name ===
-            'AbortError'
-        ) {
+        if (erro && erro.name === 'AbortError') {
           throw new Error(
             'O handshake WebRTC demorou mais do que ' +
-            CONFIG.TIMEOUT_HANDSHAKE_MS +
-            ' ms.'
+            CONFIG.TIMEOUT_HANDSHAKE_MS + ' ms.'
           );
         }
-
         throw erro;
-
       } finally {
-        clearTimeout(
-          timeout
-        );
+        clearTimeout(timeout);
       }
     }
 
-    function conexaoRealtimeDentroDaIdade(
-      criadaEm
-    ) {
+    function conexaoRealtimeDentroDaIdade(criadaEm) {
       return (
-        Number.isFinite(
-          criadaEm
-        ) &&
+        Number.isFinite(criadaEm) &&
         criadaEm > 0 &&
-        performance.now() -
-          criadaEm <
-          CONFIG
-            .MAX_IDADE_CONEXAO_REALTIME_MS
+        performance.now() - criadaEm <
+          CONFIG.MAX_IDADE_CONEXAO_REALTIME_MS
       );
     }
 
-
     function fecharConexaoTranscricao() {
-      const canalAnterior =
-        canalTranscricao;
+      const dc = canalTranscricao;
+      const pc = conexaoTranscricao;
 
-      const conexaoAnterior =
-        conexaoTranscricao;
-
-      /*
-       * Limpamos as referências ANTES de fechar. Assim os
-       * listeners de close/connectionstatechange reconhecem
-       * que foi um encerramento intencional e não exibem um
-       * falso erro para o atendimento atual.
-       */
       canalTranscricao = null;
       conexaoTranscricao = null;
       conexaoTranscricaoCriadaEm = 0;
 
-      try {
-        if (canalAnterior) {
-          canalAnterior.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-
-      try {
-        if (conexaoAnterior) {
-          conexaoAnterior.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
+      try { if (dc) dc.close(); } catch (erro) {}
+      try { if (pc) pc.close(); } catch (erro) {}
     }
-
 
     function tratarInterrupcaoConexaoTranscricao(
       pc,
@@ -1591,1555 +682,162 @@
       conexaoTranscricaoCriadaEm = 0;
 
       try {
-        if (
-          dc &&
-          dc.readyState !== 'closed'
-        ) {
-          dc.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-
+        if (dc && dc.readyState !== 'closed') dc.close();
+      } catch (erro) {}
       try {
-        if (
-          pc &&
-          pc.connectionState !== 'closed'
-        ) {
-          pc.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
+        if (pc && pc.connectionState !== 'closed') pc.close();
+      } catch (erro) {}
 
-      if (
-        atendimentoAtivo ||
-        finalizando
-      ) {
-        falhar(
-          mensagem ||
-          'A conexão de transcrição foi interrompida. Toque em Iniciar para reconectar.'
-        );
+      if (atendimentoAtivo || finalizando) {
+        falhar(mensagem);
       }
     }
-
-
-    function abortarRequisicoesPreIAEmVoo() {
-      if (preIncrementalTimeout) {
-        clearTimeout(
-          preIncrementalTimeout
-        );
-
-        preIncrementalTimeout =
-          null;
-      }
-
-      preIncrementalSeqAtual =
-        null;
-
-      preIncrementalPendente =
-        false;
-
-      esperasPreIAFinal.forEach(
-        function (
-          espera,
-          seq
-        ) {
-          clearTimeout(
-            espera.timeout
-          );
-
-          const requisicao =
-            requisicoesPreIA.get(
-              seq
-            );
-
-          espera.resolve({
-            cadastro: null,
-            textoFonte:
-              requisicao
-                ? requisicao.texto
-                : '',
-            tempoMs:
-              Math.round(
-                performance.now() -
-                espera.inicio
-              )
-          });
-        }
-      );
-
-      esperasPreIAFinal.clear();
-      requisicoesPreIA.clear();
-      responseIdParaSeq.clear();
-    }
-
-
-    function fecharConexaoPreIA() {
-      const canalAnterior =
-        canalPreIA;
-
-      const conexaoAnterior =
-        conexaoPreIA;
-
-      canalPreIA = null;
-      conexaoPreIA = null;
-      conexaoPreIACriadaEm = 0;
-
-      /*
-       * Nenhuma espera da Pré-IA deve sobreviver à conexão
-       * que a originou. Resolver como null faz o caminho final
-       * cair imediatamente no fallback forte, sem pagar todo o
-       * timeout da Pré-IA após uma queda já conhecida.
-       */
-      abortarRequisicoesPreIAEmVoo();
-
-      try {
-        if (canalAnterior) {
-          canalAnterior.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-
-      try {
-        if (conexaoAnterior) {
-          conexaoAnterior.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-    }
-
-
-    function tratarInterrupcaoConexaoPreIA(
-      pc,
-      dc
-    ) {
-      if (
-        conexaoPreIA !== pc &&
-        canalPreIA !== dc
-      ) {
-        return;
-      }
-
-      canalPreIA = null;
-      conexaoPreIA = null;
-      conexaoPreIACriadaEm = 0;
-
-      abortarRequisicoesPreIAEmVoo();
-
-      try {
-        if (
-          dc &&
-          dc.readyState !== 'closed'
-        ) {
-          dc.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-
-      try {
-        if (
-          pc &&
-          pc.connectionState !== 'closed'
-        ) {
-          pc.close();
-        }
-      } catch (erro) {
-        // sem ação
-      }
-
-      console.warn(
-        '[PRÉ-IA] Conexão interrompida. O fallback permanece disponível.'
-      );
-    }
-
-
-    // =========================================================
-    // TRANSCRIÇÃO REALTIME
-    // =========================================================
 
     function conexaoTranscricaoValida() {
       return Boolean(
         conexaoTranscricao &&
         canalTranscricao &&
-        canalTranscricao
-          .readyState === 'open' &&
-        conexaoRealtimeDentroDaIdade(
-          conexaoTranscricaoCriadaEm
-        ) &&
+        canalTranscricao.readyState === 'open' &&
+        conexaoRealtimeDentroDaIdade(conexaoTranscricaoCriadaEm) &&
         microfoneDisponivel() &&
-        conexaoTranscricao
-          .connectionState ===
-            'connected'
+        conexaoTranscricao.connectionState === 'connected'
       );
     }
 
+    async function criarConexaoTranscricao(token) {
+      const pc = new RTCPeerConnection();
+      pc.addTrack(faixaMicrofone, fluxoMicrofone);
 
-    async function criarConexaoTranscricao(
-      token
-    ) {
-      const pc =
-        new RTCPeerConnection();
+      const dc = pc.createDataChannel('oai-events');
 
-      pc.addTrack(
-        faixaMicrofone,
-        fluxoMicrofone
-      );
-
-      const dc =
-        pc.createDataChannel(
-          'oai-events'
-        );
-
-      dc.addEventListener(
-        'message',
-        function (mensagem) {
-          try {
-            const dados =
-              JSON.parse(
-                mensagem.data
-              );
-
-            void tratarEventoTranscricao(
-              dados
-            ).catch(
-              function (erro) {
-                console.error(
-                  '[TRANSCRIÇÃO] Falha ao processar evento:',
-                  erro
-                );
-
-                falhar(
-                  'Falha ao concluir a transcrição.\n' +
-                  (
-                    erro &&
-                    erro.message
-                      ? erro.message
-                      : String(erro)
-                  )
-                );
-              }
+      dc.addEventListener('message', function (mensagem) {
+        try {
+          const dados = JSON.parse(mensagem.data);
+          void tratarEventoTranscricao(dados).catch(function (erro) {
+            console.error('[TRANSCRIÇÃO] Falha ao processar evento:', erro);
+            falhar(
+              'Falha ao concluir a transcrição.\n' +
+              (erro && erro.message ? erro.message : String(erro))
             );
-
-          } catch (erro) {
-            console.error(
-              '[TRANSCRIÇÃO] Evento inválido:',
-              mensagem.data
-            );
-          }
+          });
+        } catch (erro) {
+          console.error('[TRANSCRIÇÃO] Evento inválido:', mensagem.data);
         }
-      );
+      });
 
-      dc.addEventListener(
-        'close',
-        function () {
+      dc.addEventListener('close', function () {
+        tratarInterrupcaoConexaoTranscricao(
+          pc,
+          dc,
+          'O canal de transcrição foi interrompido. Toque em Iniciar para reconectar.'
+        );
+      });
+
+      pc.addEventListener('connectionstatechange', function () {
+        if (
+          pc.connectionState === 'failed' ||
+          pc.connectionState === 'closed'
+        ) {
           tratarInterrupcaoConexaoTranscricao(
             pc,
             dc,
-            'O canal de transcrição foi interrompido. Toque em Iniciar para reconectar.'
+            'A conexão de transcrição caiu. Toque em Iniciar para reconectar.'
           );
         }
-      );
+      });
 
-      pc.addEventListener(
-        'connectionstatechange',
-        function () {
-          if (
-            pc.connectionState ===
-              'failed' ||
-            pc.connectionState ===
-              'closed'
-          ) {
-            tratarInterrupcaoConexaoTranscricao(
-              pc,
-              dc,
-              'A conexão de transcrição caiu. Toque em Iniciar para reconectar.'
-            );
-          }
-        }
+      const canalAberto = aguardarCanalAberto(
+        dc,
+        'O canal de transcrição demorou demais para abrir.'
       );
-
-      const canalAberto =
-        aguardarCanalAberto(
-          dc,
-          'O canal de transcrição demorou demais para abrir.'
-        );
 
       try {
         await Promise.all([
-          completarHandshake(
-            pc,
-            token
-          ),
+          completarHandshake(pc, token),
           canalAberto
         ]);
 
-        conexaoTranscricao =
-          pc;
-
-        canalTranscricao =
-          dc;
-
-        conexaoTranscricaoCriadaEm =
-          performance.now();
-
+        conexaoTranscricao = pc;
+        canalTranscricao = dc;
+        conexaoTranscricaoCriadaEm = performance.now();
       } catch (erro) {
-        try {
-          dc.close();
-        } catch (erroFecharCanal) {
-          // sem ação
-        }
-
-        try {
-          pc.close();
-        } catch (erroFecharConexao) {
-          // sem ação
-        }
-
+        try { dc.close(); } catch (e) {}
+        try { pc.close(); } catch (e) {}
         throw erro;
       }
     }
 
-
     function limparBufferTranscricaoAntesDeGravar() {
       if (
         !canalTranscricao ||
-        canalTranscricao.readyState !==
-          'open'
+        canalTranscricao.readyState !== 'open'
       ) {
         throw new Error(
           'O canal de transcrição não está pronto para limpar o buffer.'
         );
       }
 
-      /*
-       * A sessão WebRTC é reutilizada para reduzir latência.
-       * Limpamos o buffer antes de reativar o microfone para
-       * garantir que nenhum áudio/silêncio residual do turno
-       * anterior seja levado para o novo atendimento.
-       * Não aguardamos ACK para não acrescentar um RTT ao clique.
-       */
-      canalTranscricao.send(
-        JSON.stringify({
-          type:
-            'input_audio_buffer.clear'
-        })
-      );
+      canalTranscricao.send(JSON.stringify({
+        type: 'input_audio_buffer.clear'
+      }));
     }
 
-
     async function prepararTranscricao() {
-      if (
-        conexaoTranscricaoValida()
-      ) {
-        return;
-      }
-
-      if (
-        promessaConexaoTranscricao
-      ) {
+      if (conexaoTranscricaoValida()) return;
+      if (promessaConexaoTranscricao) {
         return promessaConexaoTranscricao;
       }
 
-      promessaConexaoTranscricao =
-        (async function () {
-          if (
-            conexaoTranscricao ||
-            canalTranscricao
-          ) {
-            fecharConexaoTranscricao();
-          }
+      promessaConexaoTranscricao = (async function () {
+        if (conexaoTranscricao || canalTranscricao) {
+          fecharConexaoTranscricao();
+        }
 
-          const resultados =
-            await Promise.all([
-              obterMicrofone(),
-              obterTokenTranscricao()
-            ]);
+        const resultados = await Promise.all([
+          obterMicrofone(),
+          obterTokenTranscricao()
+        ]);
 
-          const credencial =
-            resultados[1];
-
-          await criarConexaoTranscricao(
-            credencial.token
-          );
-        })();
+        await criarConexaoTranscricao(resultados[1].token);
+      })();
 
       try {
         await promessaConexaoTranscricao;
-
       } finally {
-        promessaConexaoTranscricao =
-          null;
+        promessaConexaoTranscricao = null;
       }
     }
 
-
-    // =========================================================
-    // PRÉ-IA REALTIME — OUT-OF-BAND, SEM HISTÓRICO
-    // =========================================================
-
-    function conexaoPreIAValida() {
-      return Boolean(
-        conexaoPreIA &&
-        canalPreIA &&
-        canalPreIA
-          .readyState === 'open' &&
-        conexaoRealtimeDentroDaIdade(
-          conexaoPreIACriadaEm
-        ) &&
-        conexaoPreIA
-          .connectionState ===
-            'connected'
-      );
-    }
-
-
-    async function criarConexaoPreIA(
-      token
-    ) {
-      const pc =
-        new RTCPeerConnection();
-
-      /*
-       * Mantém uma seção de áudio no SDP,
-       * mas NÃO envia o microfone para a Pré-IA.
-       */
-      pc.addTransceiver(
-        'audio',
-        {
-          direction: 'recvonly'
-        }
-      );
-
-      const dc =
-        pc.createDataChannel(
-          'oai-events-pre'
-        );
-
-      dc.addEventListener(
-        'message',
-        function (mensagem) {
-          try {
-            tratarEventoPreIA(
-              JSON.parse(
-                mensagem.data
-              )
-            );
-
-          } catch (erro) {
-            console.error(
-              '[PRÉ-IA] Evento inválido:',
-              mensagem.data
-            );
-          }
-        }
-      );
-
-      dc.addEventListener(
-        'close',
-        function () {
-          tratarInterrupcaoConexaoPreIA(
-            pc,
-            dc
-          );
-        }
-      );
-
-      pc.addEventListener(
-        'connectionstatechange',
-        function () {
-          if (
-            pc.connectionState ===
-              'failed' ||
-            pc.connectionState ===
-              'closed'
-          ) {
-            tratarInterrupcaoConexaoPreIA(
-              pc,
-              dc
-            );
-          }
-        }
-      );
-
-      const canalAberto =
-        aguardarCanalAberto(
-          dc,
-          'O canal da Pré-IA demorou demais para abrir.'
-        );
-
-      try {
-        await Promise.all([
-          completarHandshake(
-            pc,
-            token
-          ),
-          canalAberto
-        ]);
-
-        conexaoPreIA =
-          pc;
-
-        canalPreIA =
-          dc;
-
-        conexaoPreIACriadaEm =
-          performance.now();
-
-      } catch (erro) {
-        try {
-          dc.close();
-        } catch (erroFecharCanal) {
-          // sem ação
-        }
-
-        try {
-          pc.close();
-        } catch (erroFecharConexao) {
-          // sem ação
-        }
-
-        throw erro;
-      }
-    }
-
-
-    async function prepararPreIA() {
-      if (
-        conexaoPreIAValida()
-      ) {
-        return;
-      }
-
-      if (
-        promessaConexaoPreIA
-      ) {
-        return promessaConexaoPreIA;
-      }
-
-      promessaConexaoPreIA =
-        (async function () {
-          if (
-            conexaoPreIA ||
-            canalPreIA
-          ) {
-            fecharConexaoPreIA();
-          }
-
-          const credencial =
-            await solicitarJsonp(
-              'tokenPreInterpretacao'
-            );
-
-          await criarConexaoPreIA(
-            credencial.token
-          );
-        })();
-
-      try {
-        await promessaConexaoPreIA;
-
-      } finally {
-        promessaConexaoPreIA =
-          null;
-      }
-    }
-
-
-    function liberarPreIAIncremental(
-      seq
-    ) {
-      if (
-        seq !==
-        preIncrementalSeqAtual
-      ) {
-        return;
-      }
-
-      if (preIncrementalTimeout) {
-        clearTimeout(
-          preIncrementalTimeout
-        );
-
-        preIncrementalTimeout =
-          null;
-      }
-
-      preIncrementalSeqAtual =
-        null;
-
-      if (
-        preIncrementalPendente &&
-        atendimentoAtivo &&
-        !finalizando
-      ) {
-        preIncrementalPendente =
-          false;
-
-        setTimeout(
-          function () {
-            enviarPreIAIncremental();
-          },
-          0
-        );
-      }
-    }
-
-
-    function obterSeqResponse(
-      response
-    ) {
-      const metadata =
-        response &&
-        response.metadata
-          ? response.metadata
-          : {};
-
-      const seqMetadata =
-        Number(
-          metadata.piloto_seq ||
-          0
-        );
-
-      if (
-        Number.isFinite(
-          seqMetadata
-        ) &&
-        seqMetadata > 0
-      ) {
-        return seqMetadata;
-      }
-
-      if (
-        response &&
-        response.id &&
-        responseIdParaSeq.has(
-          response.id
-        )
-      ) {
-        return responseIdParaSeq.get(
-          response.id
-        );
-      }
-
-      return 0;
-    }
-
-
-    function extrairCadastroResponsePreIA(
-      response
-    ) {
-      if (
-        !response ||
-        response.status !==
-          'completed' ||
-        !Array.isArray(
-          response.output
-        )
-      ) {
-        return null;
-      }
-
-      const chamada =
-        response.output.find(
-          function (item) {
-            return (
-              item &&
-              item.type ===
-                'function_call' &&
-              item.name ===
-                'atualizar_cadastro_provisorio'
-            );
-          }
-        );
-
-      if (!chamada) {
-        return null;
-      }
-
-      try {
-        return JSON.parse(
-          chamada.arguments ||
-          '{}'
-        );
-
-      } catch (erro) {
-        console.error(
-          '[PRÉ-IA] JSON de function call inválido:',
-          chamada.arguments
-        );
-
-        return null;
-      }
-    }
-
-
-    function tratarEventoPreIA(
-      dados
-    ) {
-      if (
-        dados.type ===
-        'response.created' &&
-        dados.response
-      ) {
-        const seq =
-          obterSeqResponse(
-            dados.response
-          );
-
-        if (
-          seq > 0 &&
-          dados.response.id
-        ) {
-          responseIdParaSeq.set(
-            dados.response.id,
-            seq
-          );
-        }
-
-        return;
-      }
-
-      if (
-        dados.type ===
-        'error'
-      ) {
-        console.warn(
-          '[PRÉ-IA] Erro:',
-          dados.error || dados
-        );
-
-        return;
-      }
-
-      if (
-        dados.type !==
-          'response.done' ||
-        !dados.response
-      ) {
-        return;
-      }
-
-      const response =
-        dados.response;
-
-      const seq =
-        obterSeqResponse(
-          response
-        );
-
-      if (
-        response.id
-      ) {
-        responseIdParaSeq.delete(
-          response.id
-        );
-      }
-
-      if (!seq) {
-        return;
-      }
-
-      const requisicao =
-        requisicoesPreIA.get(
-          seq
-        );
-
-      requisicoesPreIA.delete(
-        seq
-      );
-
-      if (!requisicao) {
-        return;
-      }
-
-      const cadastro =
-        extrairCadastroResponsePreIA(
-          response
-        );
-
-      const atendimentoAindaAtual =
-        requisicao.atendimentoId ===
-        atendimentoId;
-
-      const atendimentoAindaAberto =
-        atendimentoAtivo ||
-        finalizando;
-
-      /*
-       * OOB permite respostas em paralelo e, portanto,
-       * elas podem terminar fora de ordem. Só a resposta
-       * mais nova pode atualizar o estado/UI.
-       */
-      if (
-        atendimentoAindaAtual &&
-        atendimentoAindaAberto &&
-        seq > maiorSeqPreIAAplicada &&
-        cadastro &&
-        interpretacaoPreIAValida(
-          cadastro
-        )
-      ) {
-        maiorSeqPreIAAplicada =
-          seq;
-
-        ultimoResultadoPreIA = {
-          cadastro: cadastro,
-          textoFonte:
-            requisicao.texto,
-          seq: seq,
-          atendimentoId:
-            requisicao.atendimentoId,
-          final:
-            requisicao.final,
-          concluidoEm:
-            performance.now()
-        };
-
-        mostrarPreIA(
-          cadastro,
-          requisicao.final
-            ? 'Pré-IA — cadastro final'
-            : 'Pré-IA — cadastro provisório'
-        );
-      }
-
-      liberarPreIAIncremental(
-        seq
-      );
-
-      const esperaFinal =
-        esperasPreIAFinal.get(
-          seq
-        );
-
-      if (esperaFinal) {
-        clearTimeout(
-          esperaFinal.timeout
-        );
-
-        esperasPreIAFinal.delete(
-          seq
-        );
-
-        const tempo =
-          Math.round(
-            performance.now() -
-            esperaFinal.inicio
-          );
-
-        esperaFinal.resolve({
-          cadastro:
-            cadastro &&
-            interpretacaoPreIAValida(
-              cadastro
-            )
-              ? cadastro
-              : null,
-
-          textoFonte:
-            requisicao.texto,
-
-          tempoMs:
-            tempo
-        });
-      }
-    }
-
-
-    function obterHojeBrasiliaISOCliente() {
-      try {
-        const partes =
-          new Intl.DateTimeFormat(
-            'en-US',
-            {
-              timeZone:
-                'America/Sao_Paulo',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit'
-            }
-          ).formatToParts(
-            new Date()
-          );
-
-        const valores = {};
-
-        partes.forEach(
-          function (parte) {
-            if (
-              parte.type === 'year' ||
-              parte.type === 'month' ||
-              parte.type === 'day'
-            ) {
-              valores[parte.type] =
-                parte.value;
-            }
-          }
-        );
-
-        if (
-          valores.year &&
-          valores.month &&
-          valores.day
-        ) {
-          return (
-            valores.year +
-            '-' +
-            valores.month +
-            '-' +
-            valores.day
-          );
-        }
-      } catch (erro) {
-        console.warn(
-          '[PRÉ-IA] Não foi possível calcular a data de Brasília no navegador:',
-          erro
-        );
-      }
-
-      return '';
-    }
-
-
-    function dispararPreIA(
-      texto,
-      final
-    ) {
-      const textoLimpo =
-        String(
-          texto || ''
-        ).trim();
-
-      if (
-        !textoLimpo ||
-        !conexaoPreIAValida()
-      ) {
-        return 0;
-      }
-
-      const seq =
-        ++preSeq;
-
-      const atendimentoDaRequisicao =
-        atendimentoId;
-
-      requisicoesPreIA.set(
-        seq,
-        {
-          seq: seq,
-          atendimentoId:
-            atendimentoDaRequisicao,
-          texto:
-            textoLimpo,
-          final:
-            final === true,
-          inicio:
-            performance.now()
-        }
-      );
-
-      const hojeBrasilia =
-        obterHojeBrasiliaISOCliente();
-
-      const linhasCabecalho =
-        final
-          ? [
-              'TRANSCRIÇÃO FINAL AUTORITATIVA DO ATENDIMENTO.',
-              'Use somente esta transcrição como fonte.',
-              'Retorne o cadastro FINAL COMPLETO.'
-            ]
-          : [
-              'TRANSCRIÇÃO ACUMULADA ATÉ AGORA.',
-              'Use somente esta transcrição como fonte.',
-              'Retorne o estado COMPLETO mais recente do cadastro.'
-            ];
-
-      if (hojeBrasilia) {
-        linhasCabecalho.push(
-          'Data atual em Brasília: ' +
-          hojeBrasilia +
-          '. Use esta data para interpretar hoje, amanhã e outras datas relativas.'
-        );
-      }
-
-      const cabecalho =
-        linhasCabecalho.join('\n');
-
-      canalPreIA.send(
-        JSON.stringify({
-          type:
-            'response.create',
-
-          response: {
-            conversation:
-              'none',
-
-            output_modalities: [
-              'text'
-            ],
-
-            metadata: {
-              piloto_tipo:
-                'cadastro',
-
-              piloto_atendimento:
-                String(
-                  atendimentoDaRequisicao
-                ),
-
-              piloto_seq:
-                String(seq),
-
-              piloto_final:
-                final
-                  ? '1'
-                  : '0'
-            },
-
-            input: [
-              {
-                type: 'message',
-                role: 'user',
-
-                content: [
-                  {
-                    type:
-                      'input_text',
-
-                    text:
-                      cabecalho +
-                      '\n\n' +
-                      textoLimpo
-                  }
-                ]
-              }
-            ]
-          }
-        })
-      );
-
-      return seq;
-    }
-
-
-    function agendarPreIAIncremental(
-      imediato = false
-    ) {
-      if (
-        !atendimentoAtivo ||
-        finalizando
-      ) {
-        return;
-      }
-
-      if (
-        timerPreIA
-      ) {
-        if (!imediato) {
-          return;
-        }
-
-        clearTimeout(
-          timerPreIA
-        );
-
-        timerPreIA =
-          null;
-      }
-
-      const atraso =
-        imediato
-          ? 0
-          : CONFIG
-              .INTERVALO_PRE_IA_MS;
-
-      timerPreIA =
-        setTimeout(
-          function () {
-            timerPreIA =
-              null;
-
-            enviarPreIAIncremental();
-          },
-          atraso
-        );
-    }
-
-
-    function enviarPreIAIncremental() {
-      if (
-        !atendimentoAtivo ||
-        finalizando
-      ) {
-        return;
-      }
-
-      const texto =
-        String(
-          textoParcial || ''
-        ).trim();
-
-      if (
-        texto.length <
-        CONFIG
-          .MIN_CARACTERES_PRE_IA
-      ) {
-        return;
-      }
-
-      if (
-        !conexaoPreIAValida()
-      ) {
-        void prepararPreIA()
-          .then(
-            function () {
-              if (
-                atendimentoAtivo &&
-                !finalizando
-              ) {
-                agendarPreIAIncremental(
-                  true
-                );
-              }
-            }
-          )
-          .catch(
-            function (erro) {
-              console.warn(
-                '[PRÉ-IA] Pré-aquecimento indisponível:',
-                erro
-              );
-            }
-          );
-
-        return;
-      }
-
-      if (
-        preIncrementalSeqAtual
-      ) {
-        preIncrementalPendente =
-          true;
-
-        return;
-      }
-
-      if (
-        ultimoResultadoPreIA &&
-        ultimoResultadoPreIA
-          .atendimentoId ===
-            atendimentoId &&
-        textosEquivalentes(
-          ultimoResultadoPreIA
-            .textoFonte,
-          texto
-        )
-      ) {
-        return;
-      }
-
-      const seq =
-        dispararPreIA(
-          texto,
-          false
-        );
-
-      if (seq) {
-        preIncrementalSeqAtual =
-          seq;
-
-        preIncrementalPendente =
-          false;
-
-        if (preIncrementalTimeout) {
-          clearTimeout(
-            preIncrementalTimeout
-          );
-        }
-
-        /*
-         * Uma resposta incremental nunca pode travar
-         * permanentemente a fila. Se atrasar demais,
-         * ignoramos a resposta tardia e seguimos com
-         * o texto mais recente.
-         */
-        preIncrementalTimeout =
-          setTimeout(
-            function () {
-              requisicoesPreIA.delete(
-                seq
-              );
-
-              liberarPreIAIncremental(
-                seq
-              );
-            },
-            3500
-          );
-      }
-    }
-
-
-    function aguardarPreIAFinal(
-      texto
-    ) {
-      const textoLimpo =
-        String(
-          texto || ''
-        ).trim();
-
-      if (
-        !textoLimpo ||
-        !conexaoPreIAValida()
-      ) {
-        return Promise.resolve({
-          cadastro: null,
-          textoFonte:
-            textoLimpo,
-          tempoMs: 0
-        });
-      }
-
-      const seq =
-        dispararPreIA(
-          textoLimpo,
-          true
-        );
-
-      if (!seq) {
-        return Promise.resolve({
-          cadastro: null,
-          textoFonte:
-            textoLimpo,
-          tempoMs: 0
-        });
-      }
-
-      return new Promise(
-        function (resolve) {
-          const inicio =
-            performance.now();
-
-          const timeout =
-            setTimeout(
-              function () {
-                esperasPreIAFinal.delete(
-                  seq
-                );
-
-                /*
-                 * Resposta que chegar depois do timeout
-                 * não pode alterar o estado nem a UI.
-                 */
-                requisicoesPreIA.delete(
-                  seq
-                );
-
-                resolve({
-                  cadastro: null,
-                  textoFonte:
-                    textoLimpo,
-                  tempoMs:
-                    Math.round(
-                      performance.now() -
-                      inicio
-                    )
-                });
-              },
-
-              CONFIG
-                .TIMEOUT_PRE_IA_FINAL_MS
-            );
-
-          esperasPreIAFinal.set(
-            seq,
-            {
-              resolve: resolve,
-              timeout: timeout,
-              inicio: inicio
-            }
-          );
-        }
-      );
-    }
-
-
-    function obterCadastroPreIAPronto(
-      textoFinal
-    ) {
-      if (
-        !ultimoResultadoPreIA ||
-        ultimoResultadoPreIA
-          .atendimentoId !==
-            atendimentoId ||
-        !interpretacaoPreIAValida(
-          ultimoResultadoPreIA
-            .cadastro
-        ) ||
-        !textosEquivalentes(
-          ultimoResultadoPreIA
-            .textoFonte,
-          textoFinal
-        )
-      ) {
-        return null;
-      }
-
-      return ultimoResultadoPreIA
-        .cadastro;
-    }
-
-
-    function iniciarPreFinalEspeculativa(
-      texto
-    ) {
-      const textoLimpo =
-        String(
-          texto || ''
-        ).trim();
-
-      if (
-        !textoLimpo ||
-        !conexaoPreIAValida() ||
-        obterCadastroPreIAPronto(
-          textoLimpo
-        )
-      ) {
-        return;
-      }
-
-      if (
-        preFinalEspeculativa &&
-        textosEquivalentes(
-          preFinalEspeculativa
-            .textoFonte,
-          textoLimpo
-        )
-      ) {
-        return;
-      }
-
-      preFinalEspeculativa = {
-        textoFonte:
-          textoLimpo,
-
-        promise:
-          aguardarPreIAFinal(
-            textoLimpo
-          )
-      };
-    }
-
-
-    function agendarPreFinalEspeculativaAtualizada() {
-      if (
-        !finalizando ||
-        !conexaoPreIAValida()
-      ) {
-        return;
-      }
-
-      if (
-        timerPreFinalEspeculativa
-      ) {
-        clearTimeout(
-          timerPreFinalEspeculativa
-        );
-      }
-
-      timerPreFinalEspeculativa =
-        setTimeout(
-          function () {
-            timerPreFinalEspeculativa =
-              null;
-
-            iniciarPreFinalEspeculativa(
-              textoParcial
-            );
-          },
-          CONFIG
-            .DEBOUNCE_PRE_FINAL_MS
-        );
-    }
-
-
-    async function resolverInterpretacaoFinal(
-      textoFinal
-    ) {
-      const pronto =
-        obterCadastroPreIAPronto(
-          textoFinal
-        );
-
-      if (pronto) {
-        tempoPreIAFinalUltimo =
-          0;
-
-        return pronto;
-      }
-
-      if (
-        preFinalEspeculativa &&
-        textosEquivalentes(
-          preFinalEspeculativa
-            .textoFonte,
-          textoFinal
-        )
-      ) {
-        const resultado =
-          await preFinalEspeculativa
-            .promise;
-
-        tempoPreIAFinalUltimo =
-          resultado &&
-          Number.isFinite(
-            resultado.tempoMs
-          )
-            ? resultado.tempoMs
-            : 0;
-
-        if (
-          resultado &&
-          resultado.cadastro &&
-          textosEquivalentes(
-            resultado.textoFonte,
-            textoFinal
-          )
-        ) {
-          return resultado.cadastro;
-        }
-
-        /*
-         * A solicitação especulativa já analisou exatamente
-         * o texto final e consumiu seu limite de espera.
-         * Repetir a mesma Pré-IA aqui criaria outro timeout
-         * antes do fallback. Se ela falhar/inconcluir, caímos
-         * direto na rede de segurança do servidor.
-         */
-        return null;
-      }
-
-      if (
-        conexaoPreIAValida()
-      ) {
-        const resultado =
-          await aguardarPreIAFinal(
-            textoFinal
-          );
-
-        if (
-          resultado &&
-          resultado.cadastro
-        ) {
-          tempoPreIAFinalUltimo =
-            resultado.tempoMs;
-
-          return resultado.cadastro;
-        }
-      }
-
-      tempoPreIAFinalUltimo =
-        0;
-
-      return null;
-    }
-
-
-    // =========================================================
-    // TRANSCRIÇÃO — EVENTOS
-    // =========================================================
-
-    function limparTimeoutTranscricaoFinal() {
-      if (timeoutTranscricaoFinal) {
-        clearTimeout(
-          timeoutTranscricaoFinal
-        );
-
-        timeoutTranscricaoFinal =
-          null;
-      }
-    }
-
-
-    function obterItemIdTranscricaoEvento(
-      evento
-    ) {
+    function obterItemIdTranscricaoEvento(evento) {
       return String(
-        evento && evento.item_id
-          ? evento.item_id
-          : ''
+        evento && evento.item_id ? evento.item_id : ''
       ).trim();
     }
 
+    function eventoTranscricaoPertenceAoItemAtual(evento) {
+      const itemId = obterItemIdTranscricaoEvento(evento);
+      if (!itemId) return true;
 
-    function eventoTranscricaoPertenceAoItemAtual(
-      evento
-    ) {
-      const itemId =
-        obterItemIdTranscricaoEvento(
-          evento
-        );
-
-      /*
-       * Mantém compatibilidade caso um evento futuro/legado
-       * não traga item_id. Quando ele existe, a correlação é
-       * estrita.
-       */
-      if (!itemId) {
-        return true;
-      }
-
-      if (
-        itemIdTranscricaoCommitFinal
-      ) {
-        return (
-          itemId ===
-          itemIdTranscricaoCommitFinal
-        );
+      if (itemIdTranscricaoCommitFinal) {
+        return itemId === itemIdTranscricaoCommitFinal;
       }
 
       if (!itemIdTranscricaoAtual) {
-        itemIdTranscricaoAtual =
-          itemId;
-
+        itemIdTranscricaoAtual = itemId;
         return true;
       }
 
-      return (
-        itemId ===
-        itemIdTranscricaoAtual
-      );
+      return itemId === itemIdTranscricaoAtual;
     }
 
-
-    async function tratarEventoTranscricao(
-      evento
-    ) {
-      if (
-        evento.type ===
-        'input_audio_buffer.committed'
-      ) {
-        if (!finalizando) {
-          return;
-        }
-
-        const itemId =
-          obterItemIdTranscricaoEvento(
-            evento
-          );
-
+    async function tratarEventoTranscricao(evento) {
+      if (evento.type === 'input_audio_buffer.committed') {
+        if (!finalizando) return;
+        const itemId = obterItemIdTranscricaoEvento(evento);
         if (itemId) {
-          itemIdTranscricaoCommitFinal =
-            itemId;
-
-          itemIdTranscricaoAtual =
-            itemId;
+          itemIdTranscricaoCommitFinal = itemId;
+          itemIdTranscricaoAtual = itemId;
         }
-
         return;
       }
 
@@ -3147,58 +845,20 @@
         evento.type ===
         'conversation.item.input_audio_transcription.delta'
       ) {
-        if (
-          !eventoTranscricaoPertenceAoItemAtual(
-            evento
-          )
-        ) {
-          console.warn(
-            '[TRANSCRIÇÃO] Delta de outro item ignorado:',
-            obterItemIdTranscricaoEvento(
-              evento
-            )
-          );
+        if (!eventoTranscricaoPertenceAoItemAtual(evento)) return;
 
-          return;
-        }
-        const delta =
-          String(
-            evento.delta || ''
-          );
+        const delta = String(evento.delta || '');
+        textoParcial += delta;
+        transcricaoElemento.textContent = textoParcial || 'Ouvindo...';
 
-        textoParcial +=
-          delta;
-
-        transcricaoElemento
-          .textContent =
-            textoParcial ||
-            'Ouvindo...';
-
-        if (
-          atendimentoAtivo &&
-          !finalizando
-        ) {
-          agendarPreIAIncremental();
-        } else if (finalizando) {
-          agendarPreFinalEspeculativaAtualizada();
-        }
-
-        if (
-          !primeiraDeltaRecebida
-        ) {
-          primeiraDeltaRecebida =
-            true;
-
+        if (!primeiraDeltaRecebida && delta) {
+          primeiraDeltaRecebida = true;
           mostrarMetricas(
             'Clique → primeiro texto: ' +
-            Math.round(
-              performance.now() -
-              inicioClique
-            ) +
+            Math.round(performance.now() - inicioClique) +
             ' ms'
           );
         }
-
         return;
       }
 
@@ -3206,118 +866,32 @@
         evento.type ===
         'conversation.item.input_audio_transcription.completed'
       ) {
-        if (
-          !finalizando ||
-          transcricaoFinalProcessada
-        ) {
-          return;
-        }
+        if (!finalizando || transcricaoFinalProcessada) return;
+        if (!eventoTranscricaoPertenceAoItemAtual(evento)) return;
 
-        if (
-          !eventoTranscricaoPertenceAoItemAtual(
-            evento
-          )
-        ) {
-          console.warn(
-            '[TRANSCRIÇÃO] Final de outro item ignorado:',
-            obterItemIdTranscricaoEvento(
-              evento
-            )
-          );
-
-          return;
-        }
-
-        /*
-         * A conclusão oficial do item é a fonte autoritativa.
-         * Não usamos o texto parcial como substituto se o
-         * transcript final vier vazio/inválido.
-         */
-        const textoFinal =
-          String(
-            evento.transcript ||
-            ''
-          ).trim();
-
-        transcricaoFinalProcessada =
-          true;
-
+        const textoFinal = String(evento.transcript || '').trim();
+        transcricaoFinalProcessada = true;
         limparTimeoutTranscricaoFinal();
 
         if (!textoFinal) {
-          falhar(
-            'Nenhuma fala foi identificada.'
-          );
-
+          falhar('Nenhuma fala foi identificada.');
           return;
         }
 
-        textoParcial =
-          textoFinal;
-
-        transcricaoElemento
-          .textContent =
-            textoFinal;
-
-        const tempoTranscricao =
-          Math.round(
-            performance.now() -
-            inicioFinalizacao
-          );
+        textoParcial = textoFinal;
+        transcricaoElemento.textContent = textoFinal;
 
         mostrarMetricas(
           'Finalizar → transcrição: ' +
-          tempoTranscricao +
+          Math.round(performance.now() - inicioFinalizacao) +
           ' ms'
         );
 
         definirStatus(
-          'Transcrição pronta. Finalizando cadastro...'
+          'Transcrição pronta. Interpretando em modo econômico...'
         );
 
-        if (timerPreFinalEspeculativa) {
-          clearTimeout(
-            timerPreFinalEspeculativa
-          );
-
-          timerPreFinalEspeculativa =
-            null;
-        }
-
-        iniciarPreFinalEspeculativa(
-          textoFinal
-        );
-
-        const interpretacaoFinal =
-          await resolverInterpretacaoFinal(
-            textoFinal
-          );
-
-        if (
-          interpretacaoPreIAValida(
-            interpretacaoFinal
-          )
-        ) {
-          mostrarPreIA(
-            interpretacaoFinal,
-            'Pré-IA — cadastro final'
-          );
-
-          enviarCadastroPreInterpretado(
-            interpretacaoFinal,
-            textoFinal
-          );
-
-        } else {
-          definirStatus(
-            'Pré-IA indisponível ou inconclusiva. Usando interpretação tradicional...'
-          );
-
-          enviarCadastroFallback(
-            textoFinal
-          );
-        }
-
+        enviarCadastroEconomico(textoFinal);
         return;
       }
 
@@ -3325,601 +899,230 @@
         evento.type ===
         'conversation.item.input_audio_transcription.failed'
       ) {
-        if (
-          !eventoTranscricaoPertenceAoItemAtual(
-            evento
-          )
-        ) {
-          return;
-        }
-
+        if (!eventoTranscricaoPertenceAoItemAtual(evento)) return;
         limparTimeoutTranscricaoFinal();
-
-        const mensagem =
-          evento.error &&
-          evento.error.message
-            ? evento.error.message
-            : 'A transcrição do áudio falhou.';
-
         fecharConexaoTranscricao();
-
         falhar(
           'Falha na transcrição:\n' +
-          mensagem
+          (evento.error && evento.error.message
+            ? evento.error.message
+            : 'A transcrição do áudio falhou.')
         );
-
         return;
       }
 
-      if (
-        evento.type ===
-        'error'
-      ) {
+      if (evento.type === 'error') {
         const mensagem =
-          evento.error &&
-          evento.error.message
+          evento.error && evento.error.message
             ? evento.error.message
             : 'A OpenAI retornou um erro na transcrição.';
-
-        falhar(
-          'Erro Realtime:\n' +
-          mensagem
-        );
+        falhar('Erro Realtime:\n' + mensagem);
       }
     }
-
-
-    // =========================================================
-    // CADASTRO — IFRAME / FORM POST
-    // =========================================================
 
     function limparTransporteCadastro() {
-      if (
-        timeoutCadastro
-      ) {
-        clearTimeout(
-          timeoutCadastro
-        );
-
-        timeoutCadastro =
-          null;
+      if (timeoutCadastro) {
+        clearTimeout(timeoutCadastro);
+        timeoutCadastro = null;
       }
-
-      if (
-        iframeCadastroAtual
-      ) {
-        iframeCadastroAtual
-          .remove();
-
-        iframeCadastroAtual =
-          null;
+      if (iframeCadastroAtual) {
+        iframeCadastroAtual.remove();
+        iframeCadastroAtual = null;
       }
     }
 
+    function enviarPostAppsScript(acao, campos) {
+      if (cadastroEmAndamento) return;
 
-    function enviarPostAppsScript(
-      acao,
-      campos,
-      textoFallback = ''
-    ) {
+      cadastroEmAndamento = true;
+      const requestId = gerarId('cadastro');
+      cadastroAtual = { requestId: requestId, acao: acao };
+
+      const nomeIframe = gerarId('iframe');
+      iframeCadastroAtual = document.createElement('iframe');
+      iframeCadastroAtual.name = nomeIframe;
+      iframeCadastroAtual.style.display = 'none';
+      document.body.appendChild(iframeCadastroAtual);
+
+      const formulario = document.createElement('form');
+      formulario.method = 'POST';
+      formulario.action = CONFIG.URL_APPS_SCRIPT;
+      formulario.target = nomeIframe;
+      formulario.style.display = 'none';
+
+      const todosCampos = Object.assign({}, campos, {
+        acao: acao,
+        requestId: requestId
+      });
+
+      Object.keys(todosCampos).forEach(function (nome) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = nome;
+        input.value = String(todosCampos[nome] ?? '');
+        formulario.appendChild(input);
+      });
+
+      document.body.appendChild(formulario);
+      formulario.submit();
+      formulario.remove();
+
+      timeoutCadastro = setTimeout(function () {
+        limparTransporteCadastro();
+        cadastroEmAndamento = false;
+        cadastroAtual = null;
+        finalizando = false;
+        botaoIniciar.disabled = false;
+        botaoFinalizar.disabled = true;
+        definirStatus(
+          'O cadastro demorou mais do que o esperado. Verifique a planilha antes de tentar novamente.',
+          'erro'
+        );
+      }, CONFIG.TIMEOUT_CADASTRO_MS);
+    }
+
+    function enviarCadastroEconomico(texto) {
+      definirStatus(
+        'Interpretando e cadastrando em modo econômico...'
+      );
+
+      enviarPostAppsScript('processar_realtime', {
+        texto: texto
+      });
+    }
+
+    window.addEventListener('message', function (evento) {
+      const origemValida =
+        evento.origin === 'https://script.google.com' ||
+        evento.origin.endsWith('.googleusercontent.com');
+
+      if (!origemValida) return;
       if (
-        cadastroEmAndamento
+        !iframeCadastroAtual ||
+        evento.source !== iframeCadastroAtual.contentWindow
       ) {
         return;
       }
 
-      cadastroEmAndamento =
-        true;
-
-      const requestId =
-        gerarId(
-          'cad'
-        );
-
-      cadastroAtual = {
-        requestId:
-          requestId,
-
-        acao:
-          acao,
-
-        textoFallback:
-          String(
-            textoFallback || ''
-          )
-      };
-
-      const nomeIframe =
-        'pilotoCadastro_' +
-        Date.now() +
-        '_' +
-        Math.random()
-          .toString(36)
-          .slice(2);
-
-      iframeCadastroAtual =
-        document.createElement(
-          'iframe'
-        );
-
-      iframeCadastroAtual.name =
-        nomeIframe;
-
-      iframeCadastroAtual
-        .style.display =
-          'none';
-
-      document.body.appendChild(
-        iframeCadastroAtual
-      );
-
-      const formulario =
-        document.createElement(
-          'form'
-        );
-
-      formulario.method =
-        'POST';
-
-      formulario.action =
-        CONFIG
-          .URL_APPS_SCRIPT;
-
-      formulario.target =
-        nomeIframe;
-
-      formulario.style.display =
-        'none';
-
-      const todosCampos =
-        Object.assign(
-          {},
-          campos,
-          {
-            acao:
-              acao,
-
-            requestId:
-              requestId
-          }
-        );
-
-      Object.keys(
-        todosCampos
-      ).forEach(
-        function (nome) {
-          const input =
-            document
-              .createElement(
-                'input'
-              );
-
-          input.type =
-            'hidden';
-
-          input.name =
-            nome;
-
-          input.value =
-            String(
-              todosCampos[
-                nome
-              ] ?? ''
-            );
-
-          formulario
-            .appendChild(
-              input
-            );
-        }
-      );
-
-      document.body.appendChild(
-        formulario
-      );
-
-      formulario.submit();
-
-      formulario.remove();
-
-      timeoutCadastro =
-        setTimeout(
-          function () {
-            limparTransporteCadastro();
-
-            cadastroEmAndamento =
-              false;
-
-            cadastroAtual =
-              null;
-
-            definirStatus(
-              'O cadastro demorou mais do que o esperado. Verifique a planilha antes de tentar novamente.',
-              'erro'
-            );
-
-            finalizando =
-              false;
-
-            botaoIniciar.disabled =
-              false;
-
-            botaoFinalizar.disabled =
-              true;
-          },
-
-          CONFIG
-            .TIMEOUT_CADASTRO_MS
-        );
-    }
-
-
-    function enviarCadastroPreInterpretado(
-      interpretacao,
-      textoFallback
-    ) {
-      definirStatus(
-        'Pré-IA válida. Cadastrando diretamente...'
-      );
-
-      enviarPostAppsScript(
-        'cadastrar_pre_interpretado',
-
-        {
-          interpretacao:
-            JSON.stringify(
-              interpretacao
-            )
-        },
-
-        textoFallback
-      );
-    }
-
-
-    function enviarCadastroFallback(
-      texto
-    ) {
-      definirStatus(
-        'Interpretando e cadastrando pelo fallback...'
-      );
-
-      enviarPostAppsScript(
-        'processar_realtime',
-
-        {
-          texto:
-            texto
-        },
-
-        ''
-      );
-    }
-
-
-    window.addEventListener(
-      'message',
-      function (evento) {
-        const origemValida =
-          evento.origin ===
-            'https://script.google.com' ||
-          evento.origin.endsWith(
-            '.googleusercontent.com'
-          );
-
-        if (!origemValida) {
-          return;
-        }
-
-        /*
-         * Além da origem Google, exigimos que a mensagem venha
-         * exatamente do iframe criado para ESTE POST. Evita aceitar
-         * uma resposta de outra janela/iframe Google aberto na página.
-         */
-        if (
-          !iframeCadastroAtual ||
-          evento.source !==
-            iframeCadastroAtual.contentWindow
-        ) {
-          return;
-        }
-
-        const dados =
-          evento.data;
-
-        if (
-          !dados ||
-          dados.tipo !==
-            'PILOTO_REALTIME_RESULTADO' ||
-          !cadastroAtual ||
-          dados.requestId !==
-            cadastroAtual.requestId
-        ) {
-          return;
-        }
-
-        const requisicaoConcluida =
-          cadastroAtual;
-
-        limparTransporteCadastro();
-
-        cadastroEmAndamento =
-          false;
-
-        cadastroAtual =
-          null;
-
-        if (
-          dados.sucesso !==
-          true
-        ) {
-          /*
-           * Só fazemos fallback automático
-           * quando o servidor afirma que a falha
-           * aconteceu antes de qualquer escrita.
-           */
-          if (
-            dados.fallbackPermitido ===
-              true &&
-            requisicaoConcluida
-              .acao ===
-                'cadastrar_pre_interpretado' &&
-            requisicaoConcluida
-              .textoFallback
-          ) {
-            definirStatus(
-              'Pré-IA rejeitada pela validação do servidor. Usando fallback...'
-            );
-
-            enviarCadastroFallback(
-              requisicaoConcluida
-                .textoFallback
-            );
-
-            return;
-          }
-
-          definirStatus(
-            'Erro no cadastro:\n' +
-            (
-              dados.erro ||
-              'Erro não identificado.'
-            ),
-            'erro'
-          );
-
-          finalizando =
-            false;
-
-          botaoIniciar.disabled =
-            false;
-
-          botaoFinalizar.disabled =
-            true;
-
-          return;
-        }
-
-        const tempoFinalPlanilha =
-          Math.round(
-            performance.now() -
-            inicioFinalizacao
-          );
-
-        const origem =
-          dados.origem ===
-            'pre_ia'
-              ? 'PRÉ-IA'
-              : 'FALLBACK';
-
-        const primeiraPulseira =
-          Number(
-            dados.cadastro
-              .primeiraPulseira
-          );
-
-        const ultimaPulseira =
-          Number(
-            dados.cadastro
-              .ultimaPulseira
-          );
-
-        const textoPulseira =
-          Number.isFinite(
-            primeiraPulseira
-          ) &&
-          Number.isFinite(
-            ultimaPulseira
-          )
-            ? (
-                primeiraPulseira ===
-                  ultimaPulseira
-                  ? ' Pulseira: ' +
-                    primeiraPulseira +
-                    '.'
-                  : ' Pulseiras: ' +
-                    primeiraPulseira +
-                    '–' +
-                    ultimaPulseira +
-                    '.'
-              )
-            : '';
-
-        const pagamentosPendentes =
-          Array.isArray(
-            dados.cadastro
-              .pagamentosPendentes
-          )
-            ? dados.cadastro
-                .pagamentosPendentes
-                .map(function (nome) {
-                  return String(
-                    nome || ''
-                  ).trim();
-                })
-                .filter(Boolean)
-            : [];
-
-        const avisoPagamento =
-          pagamentosPendentes.length > 0
-            ? (
-                '\nPagamento pendente: ' +
-                pagamentosPendentes.join(', ') +
-                '.'
-              )
-            : '';
-
-        definirStatus(
-          'Cadastro concluído! ' +
-          dados.cadastro
-            .quantidade +
-          ' aluno(s) inserido(s) na planilha.' +
-          textoPulseira +
-          avisoPagamento,
-          'sucesso'
-        );
-
-        const detalhePlanilha =
-          dados.metricas &&
-          dados.metricas
-            .planilhaDetalhe
-            ? dados.metricas
-                .planilhaDetalhe
-            : null;
-
-        const textoDetalhePlanilha =
-          detalhePlanilha
-            ? (
-                ' | Pulseira: ' +
-                detalhePlanilha
-                  .pulseiraMs +
-                ' ms | Escrita: ' +
-                detalhePlanilha
-                  .escritaFormatacaoMs +
-                ' ms | Flush: ' +
-                detalhePlanilha
-                  .flushMs +
-                ' ms'
-              )
-            : '';
-
-        mostrarMetricas(
-          'Finalizar → planilha: ' +
-          tempoFinalPlanilha +
-          ' ms | Caminho: ' +
-          origem +
-          ' | Pré-IA final: ' +
-          tempoPreIAFinalUltimo +
-          ' ms | IA servidor: ' +
-          dados.metricas
-            .interpretacaoMs +
-          ' ms | Planilha: ' +
-          dados.metricas
-            .planilhaMs +
-          ' ms' +
-          textoDetalhePlanilha
-        );
-
-        atendimentoAtivo =
-          false;
-
-        finalizando =
-          false;
-
-        silenciarMicrofone();
-
-        botaoIniciar.disabled =
-          false;
-
-        botaoFinalizar.disabled =
-          true;
-
-        /*
-         * Só limpa estado LOCAL.
-         * Não existe histórico de Pré-IA no servidor:
-         * todas as respostas são out-of-band.
-         */
-        ultimoResultadoPreIA =
-          null;
-
-        preFinalEspeculativa =
-          null;
-
-        mostrarPreIA(
-          null
-        );
+      const dados = evento.data;
+      if (
+        !dados ||
+        dados.tipo !== 'PILOTO_REALTIME_RESULTADO' ||
+        !cadastroAtual ||
+        dados.requestId !== cadastroAtual.requestId
+      ) {
+        return;
       }
-    );
 
+      limparTransporteCadastro();
+      cadastroEmAndamento = false;
+      cadastroAtual = null;
 
-    // =========================================================
-    // INICIAR / FINALIZAR
-    // =========================================================
+      if (dados.sucesso !== true) {
+        finalizando = false;
+        botaoIniciar.disabled = false;
+        botaoFinalizar.disabled = true;
+        definirStatus(
+          'Erro no cadastro:\n' +
+          (dados.erro || 'Erro não identificado.'),
+          'erro'
+        );
+        return;
+      }
+
+      const cadastro = dados.cadastro || {};
+      const primeiraPulseira = Number(cadastro.primeiraPulseira);
+      const ultimaPulseira = Number(cadastro.ultimaPulseira);
+
+      const textoPulseira =
+        Number.isFinite(primeiraPulseira) &&
+        Number.isFinite(ultimaPulseira)
+          ? (
+              primeiraPulseira === ultimaPulseira
+                ? ' Pulseira: ' + primeiraPulseira + '.'
+                : ' Pulseiras: ' + primeiraPulseira +
+                  '–' + ultimaPulseira + '.'
+            )
+          : '';
+
+      const pagamentosPendentes =
+        Array.isArray(cadastro.pagamentosPendentes)
+          ? cadastro.pagamentosPendentes
+              .map(function (nome) {
+                return String(nome || '').trim();
+              })
+              .filter(Boolean)
+          : [];
+
+      const avisoPagamento =
+        pagamentosPendentes.length > 0
+          ? '\nPagamento pendente: ' +
+            pagamentosPendentes.join(', ') + '.'
+          : '';
+
+      definirStatus(
+        'Cadastro concluído! ' +
+        cadastro.quantidade +
+        ' aluno(s) inserido(s) na planilha.' +
+        textoPulseira +
+        avisoPagamento,
+        'sucesso'
+      );
+
+      const detalhe =
+        dados.metricas && dados.metricas.planilhaDetalhe
+          ? dados.metricas.planilhaDetalhe
+          : null;
+
+      const detalheTexto = detalhe
+        ? ' | Pulseira: ' + detalhe.pulseiraMs +
+          ' ms | Escrita: ' + detalhe.escritaFormatacaoMs +
+          ' ms | Flush: ' + detalhe.flushMs + ' ms'
+        : '';
+
+      const origem =
+        dados.origem === 'local'
+          ? 'LOCAL (sem IA)'
+          : 'LUNA';
+
+      const usoIA =
+        dados.metricas && dados.metricas.usoIA
+          ? dados.metricas.usoIA
+          : null;
+
+      const textoUsoIA = usoIA
+        ? ' | Tokens IA: ' +
+          Number(usoIA.inputTokens || 0) + '/' +
+          Number(usoIA.outputTokens || 0)
+        : ' | Tokens IA: 0';
+
+      mostrarMetricas(
+        'Finalizar → confirmação: ' +
+        Math.round(performance.now() - inicioFinalizacao) +
+        ' ms | Interpretação: ' + origem +
+        ' | Interpretação servidor: ' +
+        (dados.metricas ? dados.metricas.interpretacaoMs : '?') +
+        ' ms | Planilha: ' +
+        (dados.metricas ? dados.metricas.planilhaMs : '?') +
+        ' ms' + textoUsoIA + detalheTexto
+      );
+
+      atendimentoAtivo = false;
+      finalizando = false;
+      silenciarMicrofone();
+      botaoIniciar.disabled = false;
+      botaoFinalizar.disabled = true;
+      preaquecerTokenTranscricao();
+    });
 
     function resetarAtendimentoLocal() {
-      if (timerPreIA) {
-        clearTimeout(
-          timerPreIA
-        );
-
-        timerPreIA =
-          null;
-      }
-
-      if (timerPreFinalEspeculativa) {
-        clearTimeout(
-          timerPreFinalEspeculativa
-        );
-
-        timerPreFinalEspeculativa =
-          null;
-      }
-
-      atendimentoId +=
-        1;
-
-      textoParcial =
-        '';
-
-      itemIdTranscricaoAtual =
-        null;
-
-      itemIdTranscricaoCommitFinal =
-        null;
-
-      transcricaoFinalProcessada =
-        false;
-
+      textoParcial = '';
+      itemIdTranscricaoAtual = null;
+      itemIdTranscricaoCommitFinal = null;
+      transcricaoFinalProcessada = false;
       limparTimeoutTranscricaoFinal();
-
-      primeiraDeltaRecebida =
-        false;
-
-      /*
-       * Como todas as respostas da Pré-IA são OOB,
-       * descartamos qualquer sobra local do atendimento anterior.
-       * O helper também RESOLVE promessas pendentes como null,
-       * evitando promessas órfãs/memória retida em sessões longas.
-       */
-      abortarRequisicoesPreIAEmVoo();
-
-      maiorSeqPreIAAplicada =
-        0;
-
-      ultimoResultadoPreIA =
-        null;
-
-      preFinalEspeculativa =
-        null;
-
-      tempoPreIAFinalUltimo =
-        0;
-
-      mostrarPreIA(
-        null
-      );
+      primeiraDeltaRecebida = false;
     }
-
 
     async function iniciar() {
       if (
@@ -3931,345 +1134,137 @@
       }
 
       resetarAtendimentoLocal();
-
-      inicioClique =
-        performance.now();
-
-      inicioFinalizacao =
-        0;
-
-      botaoIniciar.disabled =
-        true;
-
-      botaoFinalizar.disabled =
-        true;
-
-      transcricaoElemento
-        .textContent =
-          'Preparando atendimento...';
-
-      mostrarMetricas(
-        ''
-      );
-
-      definirStatus(
-        'Preparando microfone...'
-      );
-
-      /*
-       * Pré-IA e transcrição aquecem em paralelo.
-       * O microfone NÃO espera a Pré-IA ficar pronta.
-       */
-      const promessaPre =
-        prepararPreIA()
-          .then(
-            function () {
-              if (
-                atendimentoAtivo &&
-                textoParcial
-              ) {
-                agendarPreIAIncremental(
-                  true
-                );
-              }
-
-              return true;
-            }
-          )
-          .catch(
-            function (erro) {
-              console.warn(
-                '[PRÉ-IA] Não ficou pronta no início. O fallback permanece disponível.',
-                erro
-              );
-
-              return false;
-            }
-          );
+      inicioClique = performance.now();
+      inicioFinalizacao = 0;
+      botaoIniciar.disabled = true;
+      botaoFinalizar.disabled = true;
+      transcricaoElemento.textContent = 'Preparando atendimento...';
+      mostrarMetricas('');
+      definirStatus('Preparando microfone...');
 
       try {
-        const reutilizouTranscricao =
-          conexaoTranscricaoValida();
-
-        const reutilizouPre =
-          conexaoPreIAValida();
-
+        const reutilizou = conexaoTranscricaoValida();
         await prepararTranscricao();
-
         limparBufferTranscricaoAntesDeGravar();
-
         ativarMicrofone();
-
-        atendimentoAtivo =
-          true;
-
-        const tempoPronto =
-          Math.round(
-            performance.now() -
-            inicioClique
-          );
+        atendimentoAtivo = true;
 
         definirStatus(
           'Gravando. Pode falar normalmente.',
           'gravando'
         );
-
-        transcricaoElemento
-          .textContent =
-            'Ouvindo...';
-
+        transcricaoElemento.textContent = 'Ouvindo...';
         mostrarMetricas(
           'Clique → microfone pronto: ' +
-          tempoPronto +
+          Math.round(performance.now() - inicioClique) +
           ' ms | Transcrição reutilizada: ' +
-          (
-            reutilizouTranscricao
-              ? 'SIM'
-              : 'NÃO'
-          ) +
-          ' | Pré-IA reutilizada: ' +
-          (
-            reutilizouPre
-              ? 'SIM'
-              : 'NÃO'
-          )
+          (reutilizou ? 'SIM' : 'NÃO')
         );
-
-        botaoFinalizar.disabled =
-          false;
-
-        /*
-         * Não aguardamos esta promessa.
-         * Ela continua aquecendo em paralelo.
-         */
-        void promessaPre;
-
+        botaoFinalizar.disabled = false;
       } catch (erro) {
         falhar(
           'Não foi possível iniciar.\n' +
-          (
-            erro &&
-            erro.message
-              ? erro.message
-              : String(erro)
-          )
+          (erro && erro.message ? erro.message : String(erro))
         );
       }
     }
 
-
     function finalizar() {
-      if (
-        !atendimentoAtivo ||
-        finalizando
-      ) {
-        return;
-      }
+      if (!atendimentoAtivo || finalizando) return;
 
       if (
         !canalTranscricao ||
-        canalTranscricao
-          .readyState !== 'open'
+        canalTranscricao.readyState !== 'open'
       ) {
         fecharConexaoTranscricao();
-
         falhar(
           'A conexão de transcrição não está disponível. Toque em Iniciar para reconectar e repita este atendimento.'
         );
-
         return;
       }
 
-      finalizando =
-        true;
-
-      atendimentoAtivo =
-        false;
-
-      inicioFinalizacao =
-        performance.now();
-
+      finalizando = true;
+      atendimentoAtivo = false;
+      inicioFinalizacao = performance.now();
       silenciarMicrofone();
-
-      botaoFinalizar.disabled =
-        true;
-
-      botaoIniciar.disabled =
-        true;
-
-      definirStatus(
-        'Finalizando transcrição...'
-      );
-
-      if (timerPreIA) {
-        clearTimeout(
-          timerPreIA
-        );
-
-        timerPreIA =
-          null;
-      }
-
-      /*
-       * Solicitação especulativa:
-       * começa a finalizar a Pré-IA no MESMO instante
-       * em que pedimos o commit da transcrição.
-       * Se o transcript final for equivalente ao texto atual,
-       * parte da latência da IA fica escondida.
-       */
-      const textoNoClique =
-        String(
-          textoParcial || ''
-        ).trim();
-
-      iniciarPreFinalEspeculativa(
-        textoNoClique
-      );
+      botaoFinalizar.disabled = true;
+      botaoIniciar.disabled = true;
+      definirStatus('Finalizando transcrição...');
 
       try {
-        canalTranscricao.send(
-          JSON.stringify({
-            type:
-              'input_audio_buffer.commit'
-          })
-        );
+        canalTranscricao.send(JSON.stringify({
+          type: 'input_audio_buffer.commit'
+        }));
 
         limparTimeoutTranscricaoFinal();
-
-        timeoutTranscricaoFinal =
-          setTimeout(
-            function () {
-              if (
-                !finalizando ||
-                transcricaoFinalProcessada
-              ) {
-                return;
-              }
-
-              fecharConexaoTranscricao();
-
-              falhar(
-                'A transcrição final não chegou dentro do limite. A conexão será refeita no próximo atendimento.'
-              );
-            },
-            CONFIG
-              .TIMEOUT_TRANSCRICAO_FINAL_MS
+        timeoutTranscricaoFinal = setTimeout(function () {
+          if (!finalizando || transcricaoFinalProcessada) return;
+          fecharConexaoTranscricao();
+          falhar(
+            'A transcrição final não chegou dentro do limite. A conexão será refeita no próximo atendimento.'
           );
-
+        }, CONFIG.TIMEOUT_TRANSCRICAO_FINAL_MS);
       } catch (erro) {
         fecharConexaoTranscricao();
-
         falhar(
           'Não foi possível finalizar a transcrição.\n' +
-          (
-            erro &&
-            erro.message
-              ? erro.message
-              : String(erro)
-          )
+          (erro && erro.message ? erro.message : String(erro))
         );
       }
     }
 
-
-    // =========================================================
-    // ERRO / FECHAMENTO
-    // =========================================================
-
-    function fecharConexoes() {
-      fecharConexaoTranscricao();
-      fecharConexaoPreIA();
+    function falhar(mensagem) {
+      limparTimeoutTranscricaoFinal();
+      silenciarMicrofone();
+      atendimentoAtivo = false;
+      finalizando = false;
+      cadastroEmAndamento = false;
+      limparTransporteCadastro();
+      cadastroAtual = null;
+      botaoIniciar.disabled = false;
+      botaoFinalizar.disabled = true;
+      definirStatus(mensagem, 'erro');
     }
 
-
-    function falhar(
-      mensagem
-    ) {
+    function fecharTudo() {
       limparTimeoutTranscricaoFinal();
-
-      silenciarMicrofone();
-
-      atendimentoAtivo =
-        false;
-
-      finalizando =
-        false;
-
-      cadastroEmAndamento =
-        false;
-
       limparTransporteCadastro();
+      fecharConexaoTranscricao();
+      try {
+        if (fluxoMicrofone) {
+          fluxoMicrofone.getTracks().forEach(function (track) {
+            track.stop();
+          });
+        }
+      } catch (erro) {}
+      fluxoMicrofone = null;
+      faixaMicrofone = null;
+    }
 
-      cadastroAtual =
-        null;
+    botaoIniciar.addEventListener('click', iniciar);
+    botaoFinalizar.addEventListener('click', finalizar);
 
-      botaoIniciar.disabled =
-        false;
+    window.addEventListener('pagehide', fecharTudo);
+    window.addEventListener('beforeunload', fecharTudo);
 
-      botaoFinalizar.disabled =
-        true;
-
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia ||
+      typeof RTCPeerConnection === 'undefined'
+    ) {
+      botaoIniciar.disabled = true;
       definirStatus(
-        mensagem,
+        'Este navegador não oferece os recursos necessários de microfone/WebRTC.',
         'erro'
       );
+    } else {
+      definirStatus(
+        'Sistema econômico carregado. Toque em “Iniciar atendimento”.',
+        'sucesso'
+      );
+      preaquecerTokenTranscricao();
     }
 
-
-    botaoIniciar.addEventListener(
-      'click',
-      iniciar
-    );
-
-    botaoFinalizar.addEventListener(
-      'click',
-      finalizar
-    );
-
-    /*
-     * Pré-busca a credencial da transcrição sem abrir
-     * o microfone. No primeiro clique, a permissão do
-     * microfone e a preparação do WebRTC podem usar um
-     * token que já chegou.
-     */
-    preaquecerTokenTranscricao();
-
-    /*
-     * Pré-aquece a sessão textual sem pedir acesso
-     * ao microfone. Assim o primeiro atendimento já
-     * tende a encontrar a Pré-IA pronta.
-     */
-    void prepararPreIA()
-      .catch(
-        function (erro) {
-          console.warn(
-            '[PRÉ-IA] Pré-aquecimento inicial indisponível:',
-            erro
-          );
-        }
-      );
-
-
-    window.addEventListener(
-      'pagehide',
-      function () {
-        silenciarMicrofone();
-
-        if (
-          fluxoMicrofone
-        ) {
-          fluxoMicrofone
-            .getTracks()
-            .forEach(
-              function (track) {
-                track.stop();
-              }
-            );
-        }
-
-        fecharConexoes();
-      }
-    );
   </script>
 </body>
 </html>
