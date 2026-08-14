@@ -530,6 +530,7 @@
 
     let inicioClique = 0;
     let inicioFinalizacao = 0;
+    let tempoTranscricaoFinalUltimo = 0;
 
     let primeiraDeltaRecebida =
       false;
@@ -3299,6 +3300,9 @@
             inicioFinalizacao
           );
 
+        tempoTranscricaoFinalUltimo =
+          tempoTranscricao;
+
         mostrarMetricas(
           'Finalizar → transcrição: ' +
           tempoTranscricao +
@@ -3460,7 +3464,10 @@
         textoFallback:
           String(
             textoFallback || ''
-          )
+          ),
+
+        postEnviadoEm:
+          performance.now()
       };
 
       const nomeIframe =
@@ -3676,6 +3683,17 @@
         const requisicaoConcluida =
           cadastroAtual;
 
+        const tempoPostCliente =
+          requisicaoConcluida &&
+          Number.isFinite(
+            requisicaoConcluida.postEnviadoEm
+          )
+            ? Math.round(
+                performance.now() -
+                requisicaoConcluida.postEnviadoEm
+              )
+            : 0;
+
         limparTransporteCadastro();
 
         cadastroEmAndamento =
@@ -3838,19 +3856,57 @@
               )
             : '';
 
+        const metricasServidor =
+          dados.metricas || {};
+
+        const tempoPostServidor =
+          Number.isFinite(
+            Number(
+              metricasServidor.totalPostMs
+            )
+          )
+            ? Number(
+                metricasServidor.totalPostMs
+              )
+            : 0;
+
+        const tempoForaServidor =
+          Math.max(
+            0,
+            tempoPostCliente -
+              tempoPostServidor
+          );
+
+        const tempoOutrosFrontend =
+          Math.max(
+            0,
+            tempoFinalPlanilha -
+              tempoTranscricaoFinalUltimo -
+              tempoPreIAFinalUltimo -
+              tempoPostCliente
+          );
+
         mostrarMetricas(
-          'Finalizar → planilha: ' +
+          'Finalizar → confirmação: ' +
           tempoFinalPlanilha +
           ' ms | Caminho: ' +
           origem +
-          ' | FLASH final: ' +
+          ' | Transcrição: ' +
+          tempoTranscricaoFinalUltimo +
+          ' ms | FLASH final: ' +
           tempoPreIAFinalUltimo +
+          ' ms | POST ida+volta: ' +
+          tempoPostCliente +
+          ' ms | Servidor medido: ' +
+          tempoPostServidor +
+          ' ms | Fora do servidor: ' +
+          tempoForaServidor +
           ' ms | IA servidor: ' +
-          dados.metricas
-            .interpretacaoMs +
+          (metricasServidor.interpretacaoMs || 0) +
           ' ms | Planilha: ' +
-          dados.metricas
-            .planilhaMs +
+          (metricasServidor.planilhaMs || 0) +
+          ' ms | Outros front: ' +
+          tempoOutrosFrontend +
           ' ms' +
           textoDetalhePlanilha
         );
@@ -3974,6 +4030,9 @@
         performance.now();
 
       inicioFinalizacao =
+        0;
+
+      tempoTranscricaoFinalUltimo =
         0;
 
       botaoIniciar.disabled =
