@@ -450,6 +450,13 @@
       TIMEOUT_PRE_IA_FINAL_MS:
         2200,
 
+      /* Lotes grandes geram JSON maior; só eles ganham espera extra. */
+      TIMEOUT_PRE_IA_LOTE_GRANDE_MS:
+        8000,
+
+      LIMIAR_CARACTERES_LOTE_GRANDE:
+        900,
+
       TIMEOUT_TOKEN_MS:
         15000,
 
@@ -792,234 +799,175 @@
     }
 
 
+    function dataCadastroValidaCliente(
+      valor
+    ) {
+      const texto = String(valor || '').trim();
+      if (!texto) return true;
+
+      let ano;
+      let mes;
+      let dia;
+      let partes = texto.match(
+        /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+      );
+
+      if (partes) {
+        ano = Number(partes[1]);
+        mes = Number(partes[2]);
+        dia = Number(partes[3]);
+      } else {
+        partes = texto.match(
+          /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+        );
+        if (!partes) return false;
+        dia = Number(partes[1]);
+        mes = Number(partes[2]);
+        ano = Number(partes[3]);
+      }
+
+      const data = new Date(
+        ano, mes - 1, dia, 12, 0, 0, 0
+      );
+
+      return (
+        data.getFullYear() === ano &&
+        data.getMonth() === mes - 1 &&
+        data.getDate() === dia
+      );
+    }
+
+
     function interpretacaoPreIAValida(
       interpretacao
     ) {
       if (
         !interpretacao ||
-        typeof interpretacao !==
-          'object' ||
-        Array.isArray(
-          interpretacao
-        )
+        typeof interpretacao !== 'object' ||
+        Array.isArray(interpretacao)
       ) {
         return false;
       }
 
-      const temResponsavel =
-        Boolean(
-          String(
-            interpretacao
-              .autoescola || ''
-          ).trim() ||
-          String(
-            interpretacao
-              .instrutor || ''
-          ).trim()
+      const autoescola = String(
+        interpretacao.autoescola || ''
+      ).trim();
+      const instrutor = String(
+        interpretacao.instrutor || ''
+      ).trim();
+
+      if (!autoescola && !instrutor) {
+        return false;
+      }
+
+      const responsavelPacote =
+        normalizarTextoComparacao(
+          autoescola || instrutor
         );
 
-      if (!temResponsavel) {
+      const pagamentoGeral =
+        normalizarTextoComparacao(
+          interpretacao.forma_pagamento_geral ||
+          interpretacao.formaPagamentoGeral || ''
+        );
+
+      const pagamentosValidos = new Set([
+        '', 'pix', 'dinheiro', 'debito', 'credito',
+        'boleto', 'transferencia', 'pacote', 'pacote de autoescola'
+      ]);
+
+      if (!pagamentosValidos.has(pagamentoGeral)) {
         return false;
       }
 
-      const alunos =
-        Array.isArray(
-          interpretacao.alunos
-        )
-          ? interpretacao.alunos
-              .map(
-                function (aluno) {
-                  return {
-                    nome:
-                      String(
-                        aluno &&
-                        aluno.nome
-                          ? aluno.nome
-                          : ''
-                      ).trim(),
-
-                    pagamento:
-                      String(
-                        aluno &&
-                        (
-                          aluno.forma_pagamento ||
-                          aluno.formaPagamento
-                        )
-                          ? (
-                              aluno.forma_pagamento ||
-                              aluno.formaPagamento
-                            )
-                          : ''
-                      ).trim()
-                  };
-                }
-              )
-              .filter(
-                function (aluno) {
-                  return aluno.nome !== '';
-                }
-              )
-          : [];
-
-      if (alunos.length === 0) {
-        return false;
-      }
-
-      const nomesVistos =
-        new Set();
-
-      const pagamentosValidos =
-        new Set([
-          '',
-          'pix',
-          'dinheiro',
-          'debito',
-          'credito',
-          'boleto',
-          'transferencia'
-        ]);
-
-      for (
-        const aluno of alunos
+      if (
+        (pagamentoGeral === 'pacote' || pagamentoGeral === 'pacote de autoescola') &&
+        !/\bpiloto\b/.test(responsavelPacote)
       ) {
-        const chaveNome =
-          normalizarTextoComparacao(
-            aluno.nome
-          );
+        return false;
+      }
 
-        if (
-          !chaveNome ||
-          nomesVistos.has(
-            chaveNome
-          )
-        ) {
+      if (!dataCadastroValidaCliente(interpretacao.data_exame)) {
+        return false;
+      }
+
+      const alunos = Array.isArray(interpretacao.alunos)
+        ? interpretacao.alunos
+            .map(function (aluno) {
+              return {
+                nome: String(
+                  aluno && aluno.nome ? aluno.nome : ''
+                ).trim(),
+                pagamento: String(
+                  aluno && (aluno.forma_pagamento || aluno.formaPagamento)
+                    ? (aluno.forma_pagamento || aluno.formaPagamento)
+                    : ''
+                ).trim(),
+                dataExame: String(
+                  aluno && (aluno.data_exame || aluno.dataExame)
+                    ? (aluno.data_exame || aluno.dataExame)
+                    : ''
+                ).trim()
+              };
+            })
+            .filter(function (aluno) {
+              return aluno.nome !== '';
+            })
+        : [];
+
+      if (alunos.length === 0) return false;
+
+      const nomesVistos = new Set();
+      for (const aluno of alunos) {
+        const chaveNome =
+          normalizarTextoComparacao(aluno.nome);
+
+        if (!chaveNome || nomesVistos.has(chaveNome)) {
           return false;
         }
-
-        nomesVistos.add(
-          chaveNome
-        );
+        nomesVistos.add(chaveNome);
 
         const pagamento =
-          normalizarTextoComparacao(
-            aluno.pagamento
-          );
+          normalizarTextoComparacao(aluno.pagamento);
 
+        if (!pagamentosValidos.has(pagamento)) {
+          return false;
+        }
+
+        const pagamentoEfetivo = pagamento || pagamentoGeral;
         if (
-          !pagamentosValidos.has(
-            pagamento
-          )
+          (pagamentoEfetivo === 'pacote' || pagamentoEfetivo === 'pacote de autoescola') &&
+          !/\bpiloto\b/.test(responsavelPacote)
         ) {
+          return false;
+        }
+
+        if (!dataCadastroValidaCliente(aluno.dataExame)) {
           return false;
         }
       }
 
-      const duvidas =
-        Array.isArray(
-          interpretacao.duvidas
-        )
-          ? interpretacao.duvidas
-              .map(
-                function (item) {
-                  return String(
-                    item || ''
-                  ).trim();
-                }
-              )
-              .filter(Boolean)
-          : [];
+      const duvidas = Array.isArray(interpretacao.duvidas)
+        ? interpretacao.duvidas
+            .map(function (item) { return String(item || '').trim(); })
+            .filter(Boolean)
+        : [];
+      if (duvidas.length > 0) return false;
 
-      if (duvidas.length > 0) {
-        return false;
-      }
-
-      const quantidadeOriginal =
-        interpretacao
-          .quantidade_mencionada;
-
+      const quantidadeOriginal = interpretacao.quantidade_mencionada;
       const quantidade =
-        quantidadeOriginal ===
-          null ||
-        quantidadeOriginal ===
-          undefined ||
+        quantidadeOriginal === null ||
+        quantidadeOriginal === undefined ||
         quantidadeOriginal === ''
           ? 0
-          : Number(
-              quantidadeOriginal
-            );
+          : Number(quantidadeOriginal);
 
-      if (
-        !Number.isInteger(
-          quantidade
-        ) ||
-        quantidade < 0
-      ) {
+      if (!Number.isInteger(quantidade) || quantidade < 0) {
         return false;
       }
 
-      if (
-        quantidade > 0 &&
-        quantidade !==
-          alunos.length
-      ) {
+      if (quantidade > 0 && quantidade !== alunos.length) {
         return false;
-      }
-
-      const dataExame =
-        String(
-          interpretacao
-            .data_exame || ''
-        ).trim();
-
-      if (dataExame) {
-        let ano;
-        let mes;
-        let dia;
-
-        let partes =
-          dataExame.match(
-            /^(\d{4})-(\d{1,2})-(\d{1,2})$/
-          );
-
-        if (partes) {
-          ano = Number(partes[1]);
-          mes = Number(partes[2]);
-          dia = Number(partes[3]);
-
-        } else {
-          partes =
-            dataExame.match(
-              /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
-            );
-
-          if (!partes) {
-            return false;
-          }
-
-          dia = Number(partes[1]);
-          mes = Number(partes[2]);
-          ano = Number(partes[3]);
-        }
-
-        const data =
-          new Date(
-            ano,
-            mes - 1,
-            dia,
-            12,
-            0,
-            0,
-            0
-          );
-
-        if (
-          data.getFullYear() !== ano ||
-          data.getMonth() !==
-            mes - 1 ||
-          data.getDate() !== dia
-        ) {
-          return false;
-        }
       }
 
       return true;
@@ -2973,8 +2921,10 @@
                 });
               },
 
-              CONFIG
-                .TIMEOUT_PRE_IA_FINAL_MS
+              textoLimpo.length >=
+                CONFIG.LIMIAR_CARACTERES_LOTE_GRANDE
+                  ? CONFIG.TIMEOUT_PRE_IA_LOTE_GRANDE_MS
+                  : CONFIG.TIMEOUT_PRE_IA_FINAL_MS
             );
 
           esperasPreIAFinal.set(
