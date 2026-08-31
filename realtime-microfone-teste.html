@@ -511,11 +511,35 @@
         2,
 
       DEBOUNCE_PRE_FINAL_MS:
-        60
+        60,
+
+      /*
+       * R5 — resgate seletivo de nomes.
+       * O áudio comprimido fica apenas na memória do navegador e só é
+       * enviado ao servidor quando há um sinal forte de nome problemático.
+       */
+      MAX_AUDIO_RESGATE_BYTES:
+        10 * 1024 * 1024,
+
+      TIMEOUT_AUDIO_LOCAL_MS:
+        1800,
+
+      /*
+       * Gatilhos acústicos conservadores. Só contam tokens alfanuméricos;
+       * pontuação e espaços não disparam o segundo passe.
+       */
+      LOGPROB_MUITO_BAIXA:
+        -3.0,
+
+      LOGPROB_BAIXA:
+        -2.0,
+
+      MIN_TOKENS_BAIXA_CONFIANCA:
+        2
     });
 
     const BUILD_ID =
-      '2026.08.31-multiauto-r4';
+      '2026.08.31-r6.1-nomes-forms-seguro';
 
 
     // =========================================================
@@ -642,6 +666,31 @@
     let timeoutTranscricaoFinal =
       null;
 
+    /*
+     * R5 — gravação local TEMPORÁRIA para eventual segunda escuta.
+     * Nada é enviado nem armazenado no fluxo normal.
+     */
+    let gravadorAudioResgate = null;
+    let chunksAudioResgate = [];
+    let promessaAudioResgate = null;
+    let resolverAudioResgate = null;
+    let audioResgateFinal = null;
+    let mimeAudioResgate = '';
+    let audioResgateDescartado = false;
+    let versaoGravacaoResgate = 0;
+
+    /*
+     * Logprobs fornecidos pela transcrição Realtime. Servem apenas para
+     * decidir se vale gastar uma segunda transcrição de maior precisão.
+     */
+    let logprobsTranscricao = [];
+
+    let resgateNomesExecutado = false;
+    let resgateNomesUsado = false;
+    let motivoResgateNomes = '';
+    let contextoResgatePendente = null;
+    let tempoResgateNomesUltimo = 0;
+
 
     // =========================================================
     // ESTADO — FLASH
@@ -761,6 +810,751 @@
           null,
           2
         );
+    }
+
+
+
+    // =========================================================
+    // R5 — ÁUDIO LOCAL TEMPORÁRIO + CONFIANÇA DE NOMES
+    // =========================================================
+
+    function escolherMimeAudioResgate() {
+      if (
+        typeof MediaRecorder ===
+          'undefined'
+      ) {
+        return '';
+      }
+
+      const candidatos = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4'
+      ];
+
+      if (
+        typeof MediaRecorder
+          .isTypeSupported !==
+        'function'
+      ) {
+        return '';
+      }
+
+      for (
+        let i = 0;
+        i < candidatos.length;
+        i += 1
+      ) {
+        if (
+          MediaRecorder
+            .isTypeSupported(
+              candidatos[i]
+            )
+        ) {
+          return candidatos[i];
+        }
+      }
+
+      return '';
+    }
+
+
+    function limparAudioResgateMemoria() {
+      gravadorAudioResgate = null;
+      chunksAudioResgate = [];
+      promessaAudioResgate = null;
+      resolverAudioResgate = null;
+      audioResgateFinal = null;
+      mimeAudioResgate = '';
+      audioResgateDescartado = false;
+    }
+
+
+    function descartarGravacaoAudioResgate() {
+      versaoGravacaoResgate += 1;
+      audioResgateDescartado = true;
+
+      const gravador =
+        gravadorAudioResgate;
+
+      gravadorAudioResgate = null;
+      chunksAudioResgate = [];
+      audioResgateFinal = null;
+
+      if (
+        gravador &&
+        gravador.state !==
+          'inactive'
+      ) {
+        try {
+          gravador.stop();
+        } catch (erro) {
+          // sem ação
+        }
+      }
+
+      promessaAudioResgate = null;
+      resolverAudioResgate = null;
+      mimeAudioResgate = '';
+    }
+
+
+    function iniciarGravacaoAudioResgate() {
+      descartarGravacaoAudioResgate();
+
+      if (
+        !fluxoMicrofone ||
+        typeof MediaRecorder ===
+          'undefined'
+      ) {
+        return false;
+      }
+
+      const minhaVersao =
+        versaoGravacaoResgate + 1;
+
+      versaoGravacaoResgate =
+        minhaVersao;
+
+      audioResgateDescartado = false;
+      chunksAudioResgate = [];
+      audioResgateFinal = null;
+
+      const mimePreferido =
+        escolherMimeAudioResgate();
+
+      let gravador;
+
+      try {
+        const opcoes = {
+          audioBitsPerSecond:
+            64000
+        };
+
+        if (mimePreferido) {
+          opcoes.mimeType =
+            mimePreferido;
+        }
+
+        gravador =
+          new MediaRecorder(
+            fluxoMicrofone,
+            opcoes
+          );
+      } catch (erroOpcoes) {
+        try {
+          gravador =
+            new MediaRecorder(
+              fluxoMicrofone
+            );
+        } catch (erro) {
+          console.warn(
+            '[R5] MediaRecorder indisponível para resgate:',
+            erro
+          );
+
+          return false;
+        }
+      }
+
+      gravadorAudioResgate =
+        gravador;
+
+      mimeAudioResgate =
+        gravador.mimeType ||
+        mimePreferido ||
+        'audio/webm';
+
+      promessaAudioResgate =
+        new Promise(
+          function (resolve) {
+            resolverAudioResgate =
+              resolve;
+          }
+        );
+
+      gravador.addEventListener(
+        'dataavailable',
+        function (evento) {
+          if (
+            minhaVersao !==
+              versaoGravacaoResgate ||
+            audioResgateDescartado ||
+            !evento.data ||
+            evento.data.size <= 0
+          ) {
+            return;
+          }
+
+          chunksAudioResgate.push(
+            evento.data
+          );
+        }
+      );
+
+      gravador.addEventListener(
+        'stop',
+        function () {
+          if (
+            minhaVersao !==
+              versaoGravacaoResgate ||
+            audioResgateDescartado
+          ) {
+            return;
+          }
+
+          const blob =
+            chunksAudioResgate.length > 0
+              ? new Blob(
+                  chunksAudioResgate,
+                  {
+                    type:
+                      mimeAudioResgate ||
+                      'audio/webm'
+                  }
+                )
+              : null;
+
+          audioResgateFinal =
+            blob &&
+            blob.size > 0
+              ? {
+                  blob: blob,
+                  mimeType:
+                    blob.type ||
+                    mimeAudioResgate ||
+                    'audio/webm'
+                }
+              : null;
+
+          gravadorAudioResgate =
+            null;
+
+          if (
+            resolverAudioResgate
+          ) {
+            resolverAudioResgate(
+              audioResgateFinal
+            );
+          }
+
+          resolverAudioResgate =
+            null;
+        }
+      );
+
+      gravador.addEventListener(
+        'error',
+        function (evento) {
+          console.warn(
+            '[R5] Falha na gravação local de segurança:',
+            evento &&
+            evento.error
+              ? evento.error
+              : evento
+          );
+        }
+      );
+
+      try {
+        gravador.start(1000);
+        return true;
+      } catch (erro) {
+        console.warn(
+          '[R5] Não foi possível iniciar a gravação local de segurança:',
+          erro
+        );
+
+        descartarGravacaoAudioResgate();
+        return false;
+      }
+    }
+
+
+    function finalizarGravacaoAudioResgate() {
+      const gravador =
+        gravadorAudioResgate;
+
+      if (
+        gravador &&
+        gravador.state !==
+          'inactive'
+      ) {
+        try {
+          if (
+            typeof gravador
+              .requestData ===
+              'function'
+          ) {
+            gravador.requestData();
+          }
+        } catch (erroRequestData) {
+          // sem ação
+        }
+
+        try {
+          gravador.stop();
+        } catch (erroStop) {
+          console.warn(
+            '[R5] Não foi possível finalizar a cópia temporária do áudio:',
+            erroStop
+          );
+        }
+      }
+
+      if (audioResgateFinal) {
+        return Promise.resolve(
+          audioResgateFinal
+        );
+      }
+
+      return (
+        promessaAudioResgate ||
+        Promise.resolve(null)
+      );
+    }
+
+
+    function aguardarAudioResgateFinal() {
+      const promessa =
+        finalizarGravacaoAudioResgate();
+
+      return Promise.race([
+        promessa,
+        new Promise(
+          function (resolve) {
+            setTimeout(
+              function () {
+                resolve(null);
+              },
+              CONFIG
+                .TIMEOUT_AUDIO_LOCAL_MS
+            );
+          }
+        )
+      ]);
+    }
+
+
+    function blobParaBase64(
+      blob
+    ) {
+      return new Promise(
+        function (
+          resolve,
+          reject
+        ) {
+          const leitor =
+            new FileReader();
+
+          leitor.onload =
+            function () {
+              const resultado =
+                String(
+                  leitor.result || ''
+                );
+
+              const indiceVirgula =
+                resultado.indexOf(',');
+
+              resolve(
+                indiceVirgula >= 0
+                  ? resultado.slice(
+                      indiceVirgula + 1
+                    )
+                  : resultado
+              );
+            };
+
+          leitor.onerror =
+            function () {
+              reject(
+                leitor.error ||
+                new Error(
+                  'Falha ao preparar o áudio de resgate.'
+                )
+              );
+            };
+
+          leitor.readAsDataURL(
+            blob
+          );
+        }
+      );
+    }
+
+
+    function registrarLogprobsTranscricao(
+      lista
+    ) {
+      if (!Array.isArray(lista)) {
+        return;
+      }
+
+      lista.forEach(
+        function (item) {
+          if (
+            !item ||
+            !Number.isFinite(
+              Number(
+                item.logprob
+              )
+            )
+          ) {
+            return;
+          }
+
+          logprobsTranscricao.push({
+            token:
+              String(
+                item.token || ''
+              ),
+            logprob:
+              Number(
+                item.logprob
+              )
+          });
+        }
+      );
+
+      /*
+       * Proteção de memória para atendimentos excepcionalmente longos.
+       */
+      if (
+        logprobsTranscricao.length >
+        12000
+      ) {
+        logprobsTranscricao =
+          logprobsTranscricao.slice(
+            -12000
+          );
+      }
+    }
+
+
+    function analisarConfiancaTranscricao() {
+      const relevantes =
+        logprobsTranscricao
+          .filter(
+            function (item) {
+              return (
+                item &&
+                /[\p{L}\p{N}]/u.test(
+                  String(
+                    item.token || ''
+                  )
+                )
+              );
+            }
+          );
+
+      let muitoBaixos = 0;
+      let baixos = 0;
+      let menor = 0;
+
+      relevantes.forEach(
+        function (item) {
+          const valor =
+            Number(
+              item.logprob
+            );
+
+          if (
+            valor <
+            menor
+          ) {
+            menor = valor;
+          }
+
+          if (
+            valor <=
+            CONFIG.LOGPROB_MUITO_BAIXA
+          ) {
+            muitoBaixos += 1;
+          }
+
+          if (
+            valor <=
+            CONFIG.LOGPROB_BAIXA
+          ) {
+            baixos += 1;
+          }
+        }
+      );
+
+      return {
+        total:
+          relevantes.length,
+        muitoBaixos:
+          muitoBaixos,
+        baixos:
+          baixos,
+        menor:
+          menor
+      };
+    }
+
+
+    function nomeAlunoPareceSuspeito(
+      nome
+    ) {
+      const texto =
+        normalizarTextoComparacao(
+          nome
+        );
+
+      if (!texto) {
+        return true;
+      }
+
+      if (
+        /^\d+$/.test(
+          texto.replace(/\s+/g, '')
+        )
+      ) {
+        return true;
+      }
+
+      const proibidosExatos = [
+        'pix',
+        'dinheiro',
+        'debito',
+        'credito',
+        'boleto',
+        'transferencia',
+        'pacote',
+        'autoescola',
+        'instrutor',
+        'piloto',
+        'interlagos',
+        'proximo',
+        'proxima',
+        'seguinte',
+        'nao entendi',
+        'inaudivel'
+      ];
+
+      return (
+        proibidosExatos.indexOf(
+          texto
+        ) >= 0
+      );
+    }
+
+
+    function avaliarNecessidadeResgateNomes(
+      interpretacao,
+      texto
+    ) {
+      if (
+        resgateNomesExecutado ||
+        !interpretacao ||
+        typeof interpretacao !==
+          'object'
+      ) {
+        return {
+          necessario: false,
+          motivo: ''
+        };
+      }
+
+      const alunos =
+        Array.isArray(
+          interpretacao.alunos
+        )
+          ? interpretacao.alunos
+          : [];
+
+      const nomes =
+        alunos.map(
+          function (aluno) {
+            return String(
+              aluno &&
+              typeof aluno ===
+                'object'
+                ? (
+                    aluno.nome ||
+                    ''
+                  )
+                : (
+                    typeof aluno ===
+                      'string'
+                      ? aluno
+                      : ''
+                  )
+            ).trim();
+          }
+        );
+
+      const nomesVazios =
+        nomes.filter(
+          function (nome) {
+            return !nome;
+          }
+        ).length;
+
+      const textoBruto =
+        String(
+          texto || ''
+        );
+
+      const haPerguntaExplicitaDeNome =
+        /\b(seu nome|qual (?:e|é) seu nome|nome completo|me fala seu nome|me diga seu nome)\b/i
+          .test(
+            textoBruto
+          );
+
+      /*
+       * Caso crítico: a pergunta de nome apareceu na transcrição, mas
+       * nenhum aluno foi extraído. Mesmo sem logprob ruim, isso merece
+       * a segunda escuta porque é exatamente o padrão de nome perdido.
+       */
+      if (
+        alunos.length === 0 &&
+        haPerguntaExplicitaDeNome
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'houve pergunta de nome, mas nenhum aluno foi reconhecido'
+        };
+      }
+
+      /*
+       * Em lotes sequenciais, dois marcadores de "próximo" normalmente
+       * significam pelo menos três mini-atendimentos. Se a quantidade de
+       * alunos interpretados ficar abaixo desse sinal estrutural, fazemos
+       * uma segunda escuta seletiva.
+       */
+      const marcadoresNovoAluno =
+        textoBruto.match(
+          /\b(pr[oó]xim[oa]|seguinte|agora outro aluno|agora outra aluna)\b/gi
+        ) || [];
+
+      if (
+        alunos.length > 0 &&
+        marcadoresNovoAluno.length > 0 &&
+        alunos.length <
+          marcadoresNovoAluno.length + 1
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'marcadores de novos atendimentos indicam possível nome perdido'
+        };
+      }
+
+      if (
+        nomesVazios > 0
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'há aluno(s) com nome vazio'
+        };
+      }
+
+      const suspeitos =
+        nomes.filter(
+          nomeAlunoPareceSuspeito
+        );
+
+      if (
+        suspeitos.length > 0
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'nome transcrito parece inconsistente com um nome de pessoa'
+        };
+      }
+
+      const quantidade =
+        Number(
+          interpretacao
+            .quantidade_mencionada ||
+          0
+        );
+
+      const nomesPreenchidos =
+        nomes.filter(Boolean).length;
+
+      if (
+        Number.isInteger(
+          quantidade
+        ) &&
+        quantidade > 0 &&
+        nomesPreenchidos <
+          quantidade
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'quantidade falada maior que a quantidade de nomes reconhecidos'
+        };
+      }
+
+      /*
+       * Se o próprio atendimento contém uma correção de grafia ou
+       * sinais de que o nome precisou ser repetido, vale a pena dar
+       * uma segunda escuta mesmo que os logprobs não tenham cruzado
+       * o limiar. É um gatilho raro e muito ligado a nomes difíceis.
+       */
+      const contextoOrtografiaOuRepeticao =
+        /\b(soletr|com dois [a-z]|com duas [a-z]|com y|com i|com h|com th|com ph|com ll|dois l|duas letras|nao entendi|não entendi|repete|repita|como e seu nome|como é seu nome)\b/i
+          .test(
+            String(
+              texto || ''
+            )
+          );
+
+      if (
+        contextoOrtografiaOuRepeticao
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'o atendimento contém correção/repetição de grafia de nome'
+        };
+      }
+
+      const confianca =
+        analisarConfiancaTranscricao();
+
+      const contextoDeNome =
+        /\b(nome|nome completo|seu nome|qual seu nome|pr[oó]xim[oa]|seguinte|outro aluno|outra aluna)\b/i
+          .test(
+            String(
+              texto || ''
+            )
+          );
+
+      if (
+        contextoDeNome &&
+        (
+          confianca.muitoBaixos >=
+            1 ||
+          confianca.baixos >=
+            CONFIG
+              .MIN_TOKENS_BAIXA_CONFIANCA
+        )
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'baixa confiança acústica em atendimento com contexto de nome',
+          confianca:
+            confianca
+        };
+      }
+
+      return {
+        necessario: false,
+        motivo: '',
+        confianca:
+          confianca
+      };
     }
 
 
@@ -3600,6 +4394,443 @@
     }
 
 
+
+    // =========================================================
+    // R5 — DECISÃO / RESGATE SELETIVO DE NOMES
+    // =========================================================
+
+    function contarNomesPreenchidos(
+      interpretacao
+    ) {
+      if (
+        !interpretacao ||
+        !Array.isArray(
+          interpretacao.alunos
+        )
+      ) {
+        return 0;
+      }
+
+      return interpretacao.alunos
+        .filter(
+          function (aluno) {
+            const nome =
+              String(
+                aluno &&
+                typeof aluno ===
+                  'object'
+                  ? (
+                      aluno.nome ||
+                      ''
+                    )
+                  : (
+                      typeof aluno ===
+                        'string'
+                        ? aluno
+                        : ''
+                    )
+              ).trim();
+
+            return Boolean(nome);
+          }
+        )
+        .length;
+    }
+
+
+    function prosseguirCadastroComInterpretacao(
+      interpretacao,
+      texto,
+      rotulo = 'FLASH — cadastro final'
+    ) {
+      if (
+        interpretacaoPreIAValida(
+          interpretacao
+        )
+      ) {
+        mostrarPreIA(
+          interpretacao,
+          rotulo
+        );
+
+        enviarCadastroPreInterpretado(
+          interpretacao,
+          texto
+        );
+
+        return;
+      }
+
+      definirStatus(
+        'FLASH indisponível ou inconclusiva. Usando interpretação tradicional...'
+      );
+
+      enviarCadastroFallback(
+        texto
+      );
+    }
+
+
+    function escolherInterpretacaoAposResgate(
+      original,
+      resgatada
+    ) {
+      if (
+        !interpretacaoPreIAValida(
+          resgatada
+        )
+      ) {
+        return original;
+      }
+
+      if (
+        !interpretacaoPreIAValida(
+          original
+        )
+      ) {
+        return resgatada;
+      }
+
+      const nomesOriginal =
+        contarNomesPreenchidos(
+          original
+        );
+
+      const nomesResgatada =
+        contarNomesPreenchidos(
+          resgatada
+        );
+
+      const linhasOriginal =
+        Array.isArray(
+          original.alunos
+        )
+          ? original.alunos.length
+          : 0;
+
+      const linhasResgatada =
+        Array.isArray(
+          resgatada.alunos
+        )
+          ? resgatada.alunos.length
+          : 0;
+
+      /*
+       * O segundo passe só substitui o primeiro se não perder nomes nem
+       * alunos. Em empate ele vence, pois foi justamente acionado por
+       * baixa confiança acústica e usa o modelo de maior precisão.
+       */
+      if (
+        nomesResgatada >=
+          nomesOriginal &&
+        linhasResgatada >=
+          linhasOriginal
+      ) {
+        return resgatada;
+      }
+
+      return original;
+    }
+
+
+    function nomeArquivoParaMime(
+      mime
+    ) {
+      const base =
+        String(
+          mime || ''
+        ).toLowerCase();
+
+      if (
+        base.includes(
+          'mp4'
+        ) ||
+        base.includes(
+          'm4a'
+        )
+      ) {
+        return 'resgate-nomes.mp4';
+      }
+
+      if (
+        base.includes(
+          'ogg'
+        )
+      ) {
+        return 'resgate-nomes.ogg';
+      }
+
+      return 'resgate-nomes.webm';
+    }
+
+
+    async function tentarResgateNomesAntesCadastro(
+      interpretacaoOriginal,
+      textoOriginal
+    ) {
+      const decisao =
+        avaliarNecessidadeResgateNomes(
+          interpretacaoOriginal,
+          textoOriginal
+        );
+
+      if (!decisao.necessario) {
+        return false;
+      }
+
+      resgateNomesExecutado = true;
+      motivoResgateNomes =
+        decisao.motivo || '';
+
+      definirStatus(
+        'Nome incerto detectado. Confirmando o áudio com alta precisão...'
+      );
+
+      let audioInfo;
+
+      try {
+        audioInfo =
+          await aguardarAudioResgateFinal();
+      } catch (erro) {
+        console.warn(
+          '[R5] Não foi possível obter a cópia local do áudio:',
+          erro
+        );
+
+        return false;
+      }
+
+      if (
+        !audioInfo ||
+        !audioInfo.blob ||
+        audioInfo.blob.size <= 0 ||
+        audioInfo.blob.size >
+          CONFIG.MAX_AUDIO_RESGATE_BYTES
+      ) {
+        console.warn(
+          '[R5] Resgate ignorado: áudio local indisponível ou acima do limite.'
+        );
+
+        return false;
+      }
+
+      try {
+        const inicioResgate =
+          performance.now();
+
+        const resultados =
+          await Promise.all([
+            solicitarJsonp(
+              'tokenResgateNomes'
+            ),
+            blobParaBase64(
+              audioInfo.blob
+            )
+          ]);
+
+        const credencial =
+          resultados[0];
+
+        const base64 =
+          resultados[1];
+
+        if (
+          !credencial ||
+          !credencial.token ||
+          !base64
+        ) {
+          return false;
+        }
+
+        contextoResgatePendente = {
+          interpretacaoOriginal:
+            interpretacaoOriginal,
+          textoOriginal:
+            textoOriginal,
+          iniciadoEm:
+            inicioResgate,
+          motivo:
+            motivoResgateNomes
+        };
+
+        enviarPostAppsScript(
+          'resgatar_nomes',
+          {
+            tokenResgate:
+              credencial.token,
+            audioBase64:
+              base64,
+            mimeType:
+              audioInfo.mimeType ||
+              'audio/webm',
+            nomeArquivo:
+              nomeArquivoParaMime(
+                audioInfo.mimeType
+              )
+          },
+          textoOriginal
+        );
+
+        return true;
+
+      } catch (erro) {
+        console.warn(
+          '[R5] Resgate seletivo indisponível; seguindo com a transcrição original:',
+          erro
+        );
+
+        contextoResgatePendente =
+          null;
+
+        return false;
+      }
+    }
+
+
+    async function concluirResgateNomes(
+      dados,
+      contexto
+    ) {
+      const textoOriginal =
+        String(
+          contexto &&
+          contexto.textoOriginal
+            ? contexto.textoOriginal
+            : textoParcial
+        ).trim();
+
+      const interpretacaoOriginal =
+        contexto &&
+        contexto.interpretacaoOriginal
+          ? contexto.interpretacaoOriginal
+          : null;
+
+      const textoResgatado =
+        String(
+          dados &&
+          dados.transcricaoResgatada
+            ? dados.transcricaoResgatada
+            : ''
+        ).trim();
+
+      tempoResgateNomesUltimo =
+        contexto &&
+        Number.isFinite(
+          contexto.iniciadoEm
+        )
+          ? Math.round(
+              performance.now() -
+              contexto.iniciadoEm
+            )
+          : 0;
+
+      if (!textoResgatado) {
+        definirStatus(
+          'A segunda escuta não trouxe texto melhor. Cadastrando com a transcrição original...'
+        );
+
+        prosseguirCadastroComInterpretacao(
+          interpretacaoOriginal,
+          textoOriginal
+        );
+
+        return;
+      }
+
+      resgateNomesUsado = true;
+
+      textoParcial =
+        textoResgatado;
+
+      transcricaoElemento
+        .textContent =
+          textoResgatado;
+
+      definirStatus(
+        'Segunda escuta concluída. Reinterpretando os nomes...'
+      );
+
+      /*
+       * Força a FLASH a considerar a transcrição de alta precisão.
+       * Se ela não responder, a interpretação original continua sendo
+       * uma rede de segurança e nenhuma linha é perdida por isso.
+       */
+      iniciarPreFinalEspeculativa(
+        textoResgatado
+      );
+
+      let interpretacaoResgatada =
+        null;
+
+      try {
+        interpretacaoResgatada =
+          await resolverInterpretacaoFinal(
+            textoResgatado
+          );
+      } catch (erro) {
+        console.warn(
+          '[R5] Falha ao reinterpretar a segunda transcrição:',
+          erro
+        );
+      }
+
+      const escolhida =
+        escolherInterpretacaoAposResgate(
+          interpretacaoOriginal,
+          interpretacaoResgatada
+        );
+
+      const textoEscolhido =
+        escolhida ===
+          interpretacaoResgatada
+          ? textoResgatado
+          : textoOriginal;
+
+      prosseguirCadastroComInterpretacao(
+        escolhida,
+        textoEscolhido,
+        escolhida ===
+          interpretacaoResgatada
+          ? 'R6 — cadastro após segunda escuta'
+          : 'FLASH — cadastro final (resgate não superou o original)'
+      );
+    }
+
+
+    function continuarAposFalhaResgate(
+      contexto,
+      mensagem
+    ) {
+      console.warn(
+        '[R5] Segunda escuta não pôde ser usada:',
+        mensagem || 'sem detalhes'
+      );
+
+      const interpretacaoOriginal =
+        contexto &&
+        contexto.interpretacaoOriginal
+          ? contexto.interpretacaoOriginal
+          : null;
+
+      const textoOriginal =
+        String(
+          contexto &&
+          contexto.textoOriginal
+            ? contexto.textoOriginal
+            : textoParcial
+        ).trim();
+
+      definirStatus(
+        'Não foi possível confirmar o nome pela segunda escuta. Cadastrando sem bloquear o atendimento...'
+      );
+
+      prosseguirCadastroComInterpretacao(
+        interpretacaoOriginal,
+        textoOriginal
+      );
+    }
+
+
     // =========================================================
     // TRANSCRIÇÃO — EVENTOS
     // =========================================================
@@ -3712,6 +4943,10 @@
 
           return;
         }
+        registrarLogprobsTranscricao(
+          evento.logprobs
+        );
+
         const delta =
           String(
             evento.delta || ''
@@ -3784,6 +5019,15 @@
          * Não usamos o texto parcial como substituto se o
          * transcript final vier vazio/inválido.
          */
+        if (
+          logprobsTranscricao.length ===
+            0
+        ) {
+          registrarLogprobsTranscricao(
+            evento.logprobs
+          );
+        }
+
         const textoFinal =
           String(
             evento.transcript ||
@@ -3847,30 +5091,22 @@
             textoFinal
           );
 
+        const resgateIniciado =
+          await tentarResgateNomesAntesCadastro(
+            interpretacaoFinal,
+            textoFinal
+          );
+
         if (
-          interpretacaoPreIAValida(
-            interpretacaoFinal
-          )
+          resgateIniciado
         ) {
-          mostrarPreIA(
-            interpretacaoFinal,
-            'FLASH — cadastro final'
-          );
-
-          enviarCadastroPreInterpretado(
-            interpretacaoFinal,
-            textoFinal
-          );
-
-        } else {
-          definirStatus(
-            'FLASH indisponível ou inconclusiva. Usando interpretação tradicional...'
-          );
-
-          enviarCadastroFallback(
-            textoFinal
-          );
+          return;
         }
+
+        prosseguirCadastroComInterpretacao(
+          interpretacaoFinal,
+          textoFinal
+        );
 
         return;
       }
@@ -4105,6 +5341,12 @@
       timeoutCadastro =
         setTimeout(
           function () {
+            const requisicaoExpirada =
+              cadastroAtual;
+
+            const contextoResgate =
+              contextoResgatePendente;
+
             limparTransporteCadastro();
 
             cadastroEmAndamento =
@@ -4112,6 +5354,24 @@
 
             cadastroAtual =
               null;
+
+            if (
+              requisicaoExpirada &&
+              requisicaoExpirada.acao ===
+                'resgatar_nomes'
+            ) {
+              contextoResgatePendente =
+                null;
+
+              continuarAposFalhaResgate(
+                contextoResgate,
+                'A segunda escuta ultrapassou o limite de tempo.'
+              );
+
+              return;
+            }
+
+            descartarGravacaoAudioResgate();
 
             definirStatus(
               'O cadastro demorou mais do que o esperado. Verifique a planilha antes de tentar novamente.',
@@ -4241,6 +5501,43 @@
         cadastroAtual =
           null;
 
+        /*
+         * A resposta de resgate NÃO é um cadastro. Ela devolve uma
+         * transcrição de alta precisão e então retomamos o fluxo normal.
+         * Se falhar, o atendimento original continua sem ser bloqueado.
+         */
+        if (
+          requisicaoConcluida &&
+          requisicaoConcluida.acao ===
+            'resgatar_nomes'
+        ) {
+          const contexto =
+            contextoResgatePendente;
+
+          contextoResgatePendente =
+            null;
+
+          if (
+            dados.sucesso ===
+              true &&
+            dados.transcricaoResgatada
+          ) {
+            void concluirResgateNomes(
+              dados,
+              contexto
+            );
+
+          } else {
+            continuarAposFalhaResgate(
+              contexto,
+              dados.erro ||
+              'A segunda escuta não retornou um resultado utilizável.'
+            );
+          }
+
+          return;
+        }
+
         if (
           dados.sucesso !==
           true
@@ -4361,13 +5658,19 @@
               )
             : '';
 
+        const avisoResgate =
+          resgateNomesUsado
+            ? '\nR6: nome(s) revisado(s) pela segunda escuta de alta precisão.'
+            : '';
+
         definirStatus(
           'Cadastro concluído! ' +
           dados.cadastro
             .quantidade +
           ' aluno(s) inserido(s) na planilha.' +
           textoPulseira +
-          avisoPagamento,
+          avisoPagamento +
+          avisoResgate,
           'sucesso'
         );
 
@@ -4447,6 +5750,15 @@
           ' ms | Outros front: ' +
           tempoOutrosFrontend +
           ' ms' +
+          (
+            resgateNomesUsado
+              ? (
+                  ' | R6 segunda escuta: ' +
+                  tempoResgateNomesUltimo +
+                  ' ms'
+                )
+              : ''
+          ) +
           textoDetalhePlanilha
         );
 
@@ -4474,6 +5786,11 @@
 
         preFinalEspeculativa =
           null;
+
+        /*
+         * O áudio temporário nunca persiste depois do atendimento.
+         */
+        limparAudioResgateMemoria();
 
         mostrarPreIA(
           null
@@ -4510,6 +5827,18 @@
 
       textoParcial =
         '';
+
+      /*
+       * Cada atendimento começa sem qualquer áudio/confiança da pessoa
+       * anterior. Isso também evita vazamento de nomes entre lotes.
+       */
+      descartarGravacaoAudioResgate();
+      logprobsTranscricao = [];
+      resgateNomesExecutado = false;
+      resgateNomesUsado = false;
+      motivoResgateNomes = '';
+      contextoResgatePendente = null;
+      tempoResgateNomesUltimo = 0;
 
       preIncrementaisDisparadas = 0;
       tamanhoTextoUltimaPreIA = 0;
@@ -4653,6 +5982,12 @@
         atendimentoAtivo =
           true;
 
+        /*
+         * Cópia comprimida e temporária para um possível resgate seletivo.
+         * Ela fica só na RAM e não é enviada se os nomes parecerem bons.
+         */
+        iniciarGravacaoAudioResgate();
+
         const tempoPronto =
           Math.round(
             performance.now() -
@@ -4751,6 +6086,13 @@
       definirStatus(
         'Finalizando transcrição...'
       );
+
+      /*
+       * Fecha a cópia local no instante do clique, sem esperar por ela.
+       * O caminho normal não ganha latência; só aguardaremos o Blob se
+       * um resgate de nome realmente for necessário.
+       */
+      void finalizarGravacaoAudioResgate();
 
       if (timerPreIA) {
         clearTimeout(
@@ -4926,6 +6268,12 @@
     ) {
       limparTimeoutTranscricaoFinal();
 
+      /*
+       * O áudio auxiliar da R5 existe apenas em memória durante o
+       * atendimento. Em qualquer erro ele é imediatamente descartado.
+       */
+      descartarGravacaoAudioResgate();
+
       silenciarMicrofone();
       inicioCapturaAudio = 0;
 
@@ -5066,6 +6414,12 @@
        */
       promessaConexaoTranscricao =
         null;
+
+      /*
+       * Áudio de um atendimento interrompido pelo segundo plano não é
+       * elegível para resgate: ele pode estar truncado.
+       */
+      descartarGravacaoAudioResgate();
 
       pararFluxoMicrofone();
       fecharConexaoTranscricao();
