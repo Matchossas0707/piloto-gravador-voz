@@ -593,7 +593,7 @@
     });
 
     const BUILD_ID =
-      '2026.09.01-r6.2-audio-reuso-responsaveis';
+      '2026.09.01-r6.3-precisao-resgate-completo';
 
 
     // =========================================================
@@ -1475,6 +1475,57 @@
             textoBruto
           );
 
+      function alunoPossuiCampo(
+        nomesCampos
+      ) {
+        return alunos.some(
+          function (aluno) {
+            if (
+              !aluno ||
+              typeof aluno !==
+                'object'
+            ) {
+              return false;
+            }
+
+            return nomesCampos.some(
+              function (campo) {
+                return Boolean(
+                  String(
+                    aluno[campo] ||
+                    ''
+                  ).trim()
+                );
+              }
+            );
+          }
+        );
+      }
+
+      function interpretacaoPossuiCampo(
+        nomesGerais,
+        nomesIndividuais
+      ) {
+        const possuiGeral =
+          nomesGerais.some(
+            function (campo) {
+              return Boolean(
+                String(
+                  interpretacao[campo] ||
+                  ''
+                ).trim()
+              );
+            }
+          );
+
+        return (
+          possuiGeral ||
+          alunoPossuiCampo(
+            nomesIndividuais
+          )
+        );
+      }
+
       /*
        * Caso crítico: a pergunta de nome apareceu na transcrição, mas
        * nenhum aluno foi extraído. Mesmo sem logprob ruim, isso merece
@@ -1492,6 +1543,81 @@
       }
 
       /*
+       * R6.3: se a pergunta foi ouvida, mas a resposta correspondente
+       * não chegou à interpretação, a segunda escuta deixa de ser
+       * exclusiva para nomes e revisa o atendimento inteiro.
+       */
+      const camposImportantes = [
+        {
+          rotulo: 'autoescola',
+          contexto:
+            /\b(auto\s*escola|cfc|qual escola|de qual escola)\b/i,
+          presente:
+            interpretacaoPossuiCampo(
+              ['autoescola', 'autoEscola'],
+              ['autoescola', 'autoEscola']
+            )
+        },
+        {
+          rotulo: 'instrutor',
+          contexto:
+            /\b(instrutor|instrutora|quem te trouxe|quem trouxe voc[eê])\b/i,
+          presente:
+            interpretacaoPossuiCampo(
+              ['instrutor'],
+              ['instrutor']
+            )
+        },
+        {
+          rotulo: 'forma de pagamento',
+          contexto:
+            /\b(forma de pagamento|vai pagar|pagamento|pix|dinheiro|d[eé]bito|cr[eé]dito|boleto|transfer[eê]ncia|pacote)\b/i,
+          presente:
+            interpretacaoPossuiCampo(
+              [
+                'forma_pagamento_geral',
+                'formaPagamentoGeral'
+              ],
+              [
+                'forma_pagamento',
+                'formaPagamento'
+              ]
+            )
+        },
+        {
+          rotulo: 'data do exame',
+          contexto:
+            /\b(data do exame|dia do exame|exame (?:e|é) (?:hoje|amanh[aã]|quando)|para que dia)\b/i,
+          presente:
+            interpretacaoPossuiCampo(
+              ['data_exame', 'dataExame'],
+              ['data_exame', 'dataExame']
+            )
+        }
+      ];
+
+      const campoFalandoMasAusente =
+        camposImportantes.find(
+          function (campo) {
+            return (
+              campo.contexto.test(
+                textoBruto
+              ) &&
+              !campo.presente
+            );
+          }
+        );
+
+      if (campoFalandoMasAusente) {
+        return {
+          necessario: true,
+          motivo:
+            campoFalandoMasAusente.rotulo +
+            ' mencionado(a), mas não recuperado(a)'
+        };
+      }
+
+      /*
        * Em lotes sequenciais, dois marcadores de "próximo" normalmente
        * significam pelo menos três mini-atendimentos. Se a quantidade de
        * alunos interpretados ficar abaixo desse sinal estrutural, fazemos
@@ -1503,7 +1629,6 @@
         ) || [];
 
       if (
-        alunos.length > 0 &&
         marcadoresNovoAluno.length > 0 &&
         alunos.length <
           marcadoresNovoAluno.length + 1
@@ -1614,6 +1739,24 @@
           necessario: true,
           motivo:
             'baixa confiança acústica em atendimento com contexto de nome',
+          confianca:
+            confianca
+        };
+      }
+
+      /*
+       * Baixa confiança espalhada pelo atendimento também pode esconder
+       * autoescola, instrutor ou pagamento. O limiar é mais conservador
+       * que o de nomes para evitar segunda chamada em todo atendimento.
+       */
+      if (
+        confianca.muitoBaixos >= 2 ||
+        confianca.baixos >= 4
+      ) {
+        return {
+          necessario: true,
+          motivo:
+            'baixa confiança acústica em dados do atendimento',
           confianca:
             confianca
         };
@@ -4775,7 +4918,7 @@
 
 
     // =========================================================
-    // R5 — DECISÃO / RESGATE SELETIVO DE NOMES
+    // R6.3 — DECISÃO / SEGUNDA ESCUTA SELETIVA
     // =========================================================
 
     function contarNomesPreenchidos(
@@ -4962,7 +5105,7 @@
         decisao.motivo || '';
 
       definirStatus(
-        'Nome incerto detectado. Confirmando o áudio com alta precisão...'
+        'Informação incerta detectada. Revisando o áudio com alta precisão...'
       );
 
       let audioInfo;
@@ -5126,7 +5269,7 @@
           textoResgatado;
 
       definirStatus(
-        'Segunda escuta concluída. Reinterpretando os nomes...'
+        'Segunda escuta concluída. Reinterpretando todos os dados...'
       );
 
       /*
@@ -5200,7 +5343,7 @@
         ).trim();
 
       definirStatus(
-        'Não foi possível confirmar o nome pela segunda escuta. Cadastrando sem bloquear o atendimento...'
+        'Não foi possível confirmar os dados pela segunda escuta. Cadastrando sem bloquear o atendimento...'
       );
 
       prosseguirCadastroComInterpretacao(
@@ -6039,7 +6182,7 @@
 
         const avisoResgate =
           resgateNomesUsado
-            ? '\nR6: nome(s) revisado(s) pela segunda escuta de alta precisão.'
+            ? '\nR6.3: dados revisados pela segunda escuta de alta precisão.'
             : '';
 
         definirStatus(
