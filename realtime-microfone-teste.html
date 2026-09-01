@@ -119,6 +119,43 @@
       margin-bottom: 18px;
     }
 
+    .microfone-controle {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 14px;
+    }
+
+    .microfone-controle label {
+      color: #334155;
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    #microfone {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--borda);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #ffffff;
+      color: var(--texto);
+      font: inherit;
+      font-size: 14px;
+    }
+
+    #microfone:disabled {
+      opacity: 0.62;
+      cursor: not-allowed;
+      background: #f1f5f9;
+    }
+
+    #microfone-ativo {
+      min-height: 17px;
+      color: var(--texto-suave);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
     button {
       min-height: 52px;
       width: 100%;
@@ -149,6 +186,7 @@
     }
 
     button:focus-visible,
+    select:focus-visible,
     summary:focus-visible {
       outline: 3px solid rgba(244, 123, 32, 0.28);
       outline-offset: 3px;
@@ -347,6 +385,18 @@
       somente quando todos os dados estiverem confirmados.
     </p>
 
+    <div class="microfone-controle">
+      <label for="microfone">Microfone de atendimento</label>
+
+      <select id="microfone">
+        <option value="">Padrão do aparelho</option>
+      </select>
+
+      <div id="microfone-ativo" aria-live="polite">
+        O microfone ativo aparecerá aqui após a primeira permissão.
+      </div>
+    </div>
+
     <div class="acoes">
       <button
         id="iniciar"
@@ -495,17 +545,21 @@
         300,
 
       /*
-       * MOBILE ROBUSTO v2:
+       * MOBILE ROBUSTO R6.2:
        * não confiamos apenas no relógio. Antes de liberar a gravação,
        * verificamos se pacotes RTP de áudio realmente estão saindo pelo
-       * WebRTC. A cada novo atendimento a conexão de transcrição é
-       * recriada para eliminar sessões "zumbis" após troca de app.
+       * WebRTC. Conexão saudável é reutilizada; sessão interrompida,
+       * muda, encerrada ou sem RTP é reconstruída automaticamente.
        */
       MIN_PACOTES_RTP_PREPARACAO:
         5,
 
       TIMEOUT_FLUXO_RTP_MS:
         2200,
+
+      /* Reuso saudável deve ser confirmado rapidamente. */
+      TIMEOUT_REUSO_RTP_MS:
+        1000,
 
       TENTATIVAS_PREPARACAO_AUDIO:
         2,
@@ -539,7 +593,7 @@
     });
 
     const BUILD_ID =
-      '2026.08.31-r6.1-nomes-forms-seguro';
+      '2026.09.01-r6.2-audio-reuso-responsaveis';
 
 
     // =========================================================
@@ -554,6 +608,16 @@
     const botaoFinalizar =
       document.getElementById(
         'finalizar'
+      );
+
+    const seletorMicrofone =
+      document.getElementById(
+        'microfone'
+      );
+
+    const microfoneAtivoElemento =
+      document.getElementById(
+        'microfone-ativo'
       );
 
     const statusElemento =
@@ -583,6 +647,12 @@
 
     let fluxoMicrofone = null;
     let faixaMicrofone = null;
+
+    const CHAVE_MICROFONE_PREFERIDO =
+      'piloto.microfone.preferido.r6.2';
+
+    let microfonePreferidoId =
+      '';
 
     /*
      * Cada chamada de getUserMedia recebe uma versão. Se o usuário sai
@@ -929,7 +999,7 @@
       try {
         const opcoes = {
           audioBitsPerSecond:
-            64000
+            96000
         };
 
         if (mimePreferido) {
@@ -2015,6 +2085,198 @@
     // MICROFONE
     // =========================================================
 
+    function carregarMicrofonePreferido() {
+      try {
+        microfonePreferidoId =
+          localStorage.getItem(
+            CHAVE_MICROFONE_PREFERIDO
+          ) || '';
+      } catch (erro) {
+        microfonePreferidoId = '';
+      }
+    }
+
+
+    function salvarMicrofonePreferido(
+      deviceId
+    ) {
+      microfonePreferidoId =
+        String(deviceId || '');
+
+      try {
+        if (microfonePreferidoId) {
+          localStorage.setItem(
+            CHAVE_MICROFONE_PREFERIDO,
+            microfonePreferidoId
+          );
+        } else {
+          localStorage.removeItem(
+            CHAVE_MICROFONE_PREFERIDO
+          );
+        }
+      } catch (erro) {
+        // O modo privado pode bloquear localStorage. A sessão atual funciona.
+      }
+    }
+
+
+    function definirMicrofoneAtivo(
+      faixa
+    ) {
+      if (!microfoneAtivoElemento) {
+        return;
+      }
+
+      if (!faixa) {
+        microfoneAtivoElemento.textContent =
+          'Nenhum microfone ativo.';
+
+        return;
+      }
+
+      microfoneAtivoElemento.textContent =
+        '🎙 Microfone ativo: ' +
+        (
+          faixa.label ||
+          'entrada de áudio selecionada'
+        );
+    }
+
+
+    async function atualizarListaMicrofones(
+      confirmarAusencia
+    ) {
+      if (
+        !seletorMicrofone ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices
+          .enumerateDevices !==
+          'function'
+      ) {
+        return;
+      }
+
+      try {
+        const dispositivos =
+          await navigator.mediaDevices
+            .enumerateDevices();
+
+        const microfones =
+          dispositivos.filter(
+            function (dispositivo) {
+              return dispositivo.kind ===
+                'audioinput';
+            }
+          );
+
+        const fragmento =
+          document.createDocumentFragment();
+
+        const opcaoPadrao =
+          document.createElement(
+            'option'
+          );
+
+        opcaoPadrao.value = '';
+        opcaoPadrao.textContent =
+          'Padrão do aparelho';
+
+        fragmento.appendChild(
+          opcaoPadrao
+        );
+
+        microfones.forEach(
+          function (
+            dispositivo,
+            indice
+          ) {
+            if (!dispositivo.deviceId) {
+              return;
+            }
+
+            const opcao =
+              document.createElement(
+                'option'
+              );
+
+            opcao.value =
+              dispositivo.deviceId;
+
+            opcao.textContent =
+              dispositivo.label ||
+              'Microfone ' +
+                (indice + 1);
+
+            fragmento.appendChild(
+              opcao
+            );
+          }
+        );
+
+        const preferidoExiste =
+          !microfonePreferidoId ||
+          microfones.some(
+            function (dispositivo) {
+              return dispositivo.deviceId ===
+                microfonePreferidoId;
+            }
+          );
+
+        if (
+          confirmarAusencia &&
+          microfones.length > 0 &&
+          !preferidoExiste
+        ) {
+          salvarMicrofonePreferido(
+            ''
+          );
+        }
+
+        seletorMicrofone.replaceChildren(
+          fragmento
+        );
+
+        seletorMicrofone.value =
+          preferidoExiste
+            ? microfonePreferidoId
+            : '';
+
+      } catch (erro) {
+        console.warn(
+          '[ÁUDIO] Não foi possível listar os microfones:',
+          erro
+        );
+      }
+    }
+
+
+    function obterRestricoesMicrofone() {
+      const audio = {
+        /*
+         * A OpenAI já aplica redução far_field. Desativar os filtros
+         * do navegador evita que falas curtas ou mais distantes do aluno
+         * sejam removidas antes de chegarem à transcrição.
+         */
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: {
+          ideal: 1
+        }
+      };
+
+      if (microfonePreferidoId) {
+        audio.deviceId = {
+          exact:
+            microfonePreferidoId
+        };
+      }
+
+      return {
+        audio: audio
+      };
+    }
+
     function microfoneDisponivel() {
       return Boolean(
         faixaMicrofone &&
@@ -2064,6 +2326,10 @@
       inicioCapturaAudio = 0;
       marcadorRtpInicioAtendimento = null;
 
+      definirMicrofoneAtivo(
+        null
+      );
+
       if (fluxoAnterior) {
         try {
           fluxoAnterior
@@ -2102,16 +2368,48 @@
       const minhaVersaoMicrofone =
         versaoSolicitacaoMicrofone;
 
-      const novoFluxo =
-        await navigator
-          .mediaDevices
-          .getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          });
+      let novoFluxo;
+
+      try {
+        novoFluxo =
+          await navigator
+            .mediaDevices
+            .getUserMedia(
+              obterRestricoesMicrofone()
+            );
+
+      } catch (erroMicrofone) {
+        const preferidoIndisponivel =
+          Boolean(
+            microfonePreferidoId &&
+            erroMicrofone &&
+            (
+              erroMicrofone.name ===
+                'NotFoundError' ||
+              erroMicrofone.name ===
+                'OverconstrainedError'
+            )
+          );
+
+        if (!preferidoIndisponivel) {
+          throw erroMicrofone;
+        }
+
+        /*
+         * O microfone salvo pode ter sido desconectado. Voltamos ao
+         * padrão do aparelho nesta tentativa, sem travar o atendimento.
+         */
+        salvarMicrofonePreferido(
+          ''
+        );
+
+        novoFluxo =
+          await navigator
+            .mediaDevices
+            .getUserMedia(
+              obterRestricoesMicrofone()
+            );
+      }
 
       /*
        * Se saímos da página ou outra preparação começou enquanto o
@@ -2160,6 +2458,14 @@
 
       microfonePrecisaReconectar =
         false;
+
+      definirMicrofoneAtivo(
+        faixaObtida
+      );
+
+      void atualizarListaMicrofones(
+        true
+      );
 
       /*
        * Alguns navegadores móveis mantêm readyState=live, mas disparam
@@ -3114,6 +3420,72 @@
     async function prepararAudioRobustoParaAtendimento() {
       let ultimoErro = null;
 
+      /*
+       * Caminho rápido R6.2: se a faixa e a conexão continuam vivas,
+       * limpamos o buffer anterior, reativamos a mesma faixa e exigimos
+       * pacotes RTP novos. O reuso só é aceito depois dessa prova real.
+       */
+      if (conexaoTranscricaoValida()) {
+        try {
+          definirStatus(
+            'Reativando microfone...'
+          );
+
+          limparBufferTranscricaoAntesDeGravar();
+
+          const marcadorAntesReuso =
+            await obterEstatisticaRtpAudio();
+
+          ativarMicrofone();
+
+          const fluxoReutilizado =
+            await aguardarFluxoRtpDesde(
+              marcadorAntesReuso,
+              CONFIG.MIN_PACOTES_RTP_PREPARACAO,
+              CONFIG.TIMEOUT_REUSO_RTP_MS
+            );
+
+          if (!fluxoReutilizado.ok) {
+            throw new Error(
+              'A conexão anterior não voltou a enviar áudio.'
+            );
+          }
+
+          marcadorRtpInicioAtendimento =
+            fluxoReutilizado.atual ||
+            await obterEstatisticaRtpAudio();
+
+          inicioCapturaAudio =
+            performance.now();
+
+          preaquecerTokenTranscricao();
+
+          return {
+            tentativa: 0,
+            reutilizou: true,
+            rtpVerificado:
+              fluxoReutilizado.suportado ===
+                true
+          };
+
+        } catch (erroReuso) {
+          ultimoErro =
+            erroReuso;
+
+          console.warn(
+            '[ÁUDIO] Reuso recusado; reconstruindo a captura:',
+            erroReuso
+          );
+
+          silenciarMicrofone();
+          promessaConexaoTranscricao =
+            null;
+          fecharConexaoTranscricao();
+          microfonePrecisaReconectar =
+            true;
+        }
+      }
+
       for (
         let tentativa = 1;
         tentativa <=
@@ -3121,18 +3493,24 @@
         tentativa += 1
       ) {
         /*
-         * REGRA MOBILE v2: cada atendimento começa com uma captura e
-         * uma conexão WebRTC NOVAS. Custa alguns milissegundos no botão
-         * Iniciar, mas elimina a reutilização de uma sessão suspensa pelo
-         * iOS/Android ao tocar outro áudio ou trocar de aplicativo.
+         * Reconstrução protegida: usada no primeiro atendimento ou
+         * quando a captura existente falha no teste de saúde. Uma faixa
+         * viva pode ser reaproveitada para criar somente o WebRTC; faixa
+         * marcada como interrompida é sempre descartada.
          */
         promessaConexaoTranscricao =
           null;
 
-        pararFluxoMicrofone();
         fecharConexaoTranscricao();
-        microfonePrecisaReconectar =
-          true;
+
+        if (
+          microfonePrecisaReconectar ||
+          !microfoneDisponivel()
+        ) {
+          pararFluxoMicrofone();
+          microfonePrecisaReconectar =
+            true;
+        }
 
         try {
           definirStatus(
@@ -3182,6 +3560,7 @@
 
           return {
             tentativa: tentativa,
+            reutilizou: false,
             rtpVerificado:
               fluxo.suportado === true
           };
@@ -5776,6 +6155,9 @@
         botaoFinalizar.disabled =
           true;
 
+        seletorMicrofone.disabled =
+          false;
+
         /*
          * Só limpa estado LOCAL.
          * Não existe histórico de FLASH no servidor:
@@ -5915,6 +6297,9 @@
       botaoFinalizar.disabled =
         true;
 
+      seletorMicrofone.disabled =
+        true;
+
       transcricaoElemento
         .textContent =
           'Preparando atendimento...';
@@ -6006,15 +6391,26 @@
         mostrarMetricas(
           'Clique → microfone pronto: ' +
           tempoPronto +
-          ' ms | Conexão de áudio: NOVA' +
+          ' ms | Conexão de áudio: ' +
+          (
+            preparacaoAudio.reutilizou
+              ? 'REUTILIZADA E TESTADA'
+              : 'NOVA'
+          ) +
           ' | RTP verificado: ' +
           (
             preparacaoAudio.rtpVerificado
               ? 'SIM'
               : 'N/D'
           ) +
-          ' | Tentativa: ' +
-          preparacaoAudio.tentativa +
+          (
+            preparacaoAudio.reutilizou
+              ? ''
+              : (
+                  ' | Tentativa: ' +
+                  preparacaoAudio.tentativa
+                )
+          ) +
           ' | FLASH reutilizada: ' +
           (
             reutilizouPre
@@ -6297,6 +6693,9 @@
       botaoFinalizar.disabled =
         true;
 
+      seletorMicrofone.disabled =
+        false;
+
       definirStatus(
         mensagem,
         'erro'
@@ -6317,6 +6716,62 @@
       'click',
       finalizar
     );
+
+    carregarMicrofonePreferido();
+
+    void atualizarListaMicrofones(
+      false
+    );
+
+    seletorMicrofone.addEventListener(
+      'change',
+      function () {
+        if (
+          atendimentoAtivo ||
+          finalizando ||
+          cadastroEmAndamento
+        ) {
+          seletorMicrofone.value =
+            microfonePreferidoId;
+
+          return;
+        }
+
+        salvarMicrofonePreferido(
+          seletorMicrofone.value
+        );
+
+        promessaConexaoTranscricao =
+          null;
+
+        pararFluxoMicrofone();
+        fecharConexaoTranscricao();
+        microfonePrecisaReconectar =
+          true;
+
+        definirStatus(
+          'Microfone selecionado. Toque em Iniciar atendimento.'
+        );
+
+        preaquecerTokenTranscricao();
+      }
+    );
+
+    if (
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices
+        .addEventListener ===
+        'function'
+    ) {
+      navigator.mediaDevices.addEventListener(
+        'devicechange',
+        function () {
+          void atualizarListaMicrofones(
+            true
+          );
+        }
+      );
+    }
 
     /*
      * Pré-busca a credencial da transcrição sem abrir
@@ -6374,6 +6829,9 @@
 
         botaoFinalizar.disabled =
           true;
+
+        seletorMicrofone.disabled =
+          false;
       }
 
       /*
@@ -6459,6 +6917,9 @@
 
         botaoFinalizar.disabled =
           true;
+
+        seletorMicrofone.disabled =
+          false;
       }
     }
 
