@@ -601,8 +601,30 @@
       LIMIAR_CARACTERES_LOTE_GRANDE:
         900,
 
+      /*
+       * O Apps Script pode sofrer cold start depois de algum tempo sem uso.
+       * A busca em segundo plano pode esperar mais, enquanto o clique em
+       * Iniciar reaproveita qualquer credencial válida já obtida.
+       */
       TIMEOUT_TOKEN_MS:
-        15000,
+        25000,
+
+      TENTATIVAS_TOKEN_APPS_SCRIPT:
+        2,
+
+      ATRASO_RETRY_TOKEN_MS:
+        350,
+
+      /* Renova silenciosamente antes que o token de 10 min expire. */
+      MARGEM_RENOVACAO_TOKEN_SEGUNDOS:
+        90,
+
+      /*
+       * Se a pré-busca antiga estiver presa, o clique não fica refém dela:
+       * após esta espera iniciamos uma solicitação independente.
+       */
+      ESPERA_PREFETCH_TOKEN_NO_CLIQUE_MS:
+        5000,
 
       TIMEOUT_CANAL_MS:
         12000,
@@ -687,7 +709,7 @@
     });
 
     const BUILD_ID =
-      '2026.09.01-r6.3-tema-preto-resgate-completo';
+      '2026.09.28-r6.4-token-estavel';
 
 
     // =========================================================
@@ -797,6 +819,12 @@
 
     let promessaTokenTranscricaoPrefetch =
       null;
+
+    let timerRenovacaoTokenTranscricao =
+      null;
+
+    const CHAVE_TOKEN_TRANSCRICAO_SESSAO =
+      'piloto_token_transcricao_realtime_v1';
 
     let atendimentoAtivo = false;
     let finalizando = false;
@@ -2061,8 +2089,9 @@
     // JSONP — TOKENS EFÊMEROS
     // =========================================================
 
-    function solicitarJsonp(
-      acao
+    function solicitarJsonpUmaVez(
+      acao,
+      timeoutMs
     ) {
       return new Promise(
         function (
@@ -2089,6 +2118,9 @@
 
           let finalizado =
             false;
+
+          let timeout =
+            null;
 
           const limpar =
             function () {
@@ -2158,27 +2190,34 @@
             function () {
               limpar();
 
-              reject(
+              const erro =
                 new Error(
-                  'Falha ao buscar a credencial Realtime.'
-                )
-              );
+                  'Falha de rede ao buscar a credencial Realtime.'
+                );
+
+              erro.transitorio =
+                true;
+
+              reject(erro);
             };
 
-          const timeout =
+          timeout =
             setTimeout(
               function () {
                 limpar();
 
-                reject(
+                const erro =
                   new Error(
                     'O Apps Script demorou demais para entregar a credencial Realtime.'
-                  )
-                );
+                  );
+
+                erro.transitorio =
+                  true;
+
+                reject(erro);
               },
 
-              CONFIG
-                .TIMEOUT_TOKEN_MS
+              timeoutMs
             );
 
           script.src =
@@ -2200,6 +2239,81 @@
               script
             );
         }
+      );
+    }
+
+
+    async function solicitarJsonp(
+      acao,
+      opcoes = {}
+    ) {
+      const tentativas =
+        Math.max(
+          1,
+          Number(
+            opcoes.tentativas ||
+            CONFIG.TENTATIVAS_TOKEN_APPS_SCRIPT
+          )
+        );
+
+      const timeoutMs =
+        Math.max(
+          5000,
+          Number(
+            opcoes.timeoutMs ||
+            CONFIG.TIMEOUT_TOKEN_MS
+          )
+        );
+
+      let ultimoErro =
+        null;
+
+      for (
+        let tentativa = 1;
+        tentativa <= tentativas;
+        tentativa += 1
+      ) {
+        try {
+          return await solicitarJsonpUmaVez(
+            acao,
+            timeoutMs
+          );
+
+        } catch (erro) {
+          ultimoErro =
+            erro;
+
+          const podeRepetir =
+            Boolean(
+              erro &&
+              erro.transitorio === true
+            );
+
+          if (
+            !podeRepetir ||
+            tentativa >= tentativas
+          ) {
+            throw erro;
+          }
+
+          await new Promise(
+            function (resolve) {
+              setTimeout(
+                resolve,
+                CONFIG
+                  .ATRASO_RETRY_TOKEN_MS *
+                  tentativa
+              );
+            }
+          );
+        }
+      }
+
+      throw (
+        ultimoErro ||
+        new Error(
+          'Não foi possível obter a credencial Realtime.'
+        )
       );
     }
 
@@ -2238,14 +2352,186 @@
     }
 
 
-    function preaquecerTokenTranscricao() {
+    function limparTokenTranscricaoSalvo() {
+      try {
+        sessionStorage.removeItem(
+          CHAVE_TOKEN_TRANSCRICAO_SESSAO
+        );
+      } catch (erro) {
+        // Armazenamento pode estar bloqueado pelo navegador.
+      }
+    }
+
+
+    function agendarRenovacaoTokenTranscricao(
+      credencial
+    ) {
+      if (timerRenovacaoTokenTranscricao) {
+        clearTimeout(
+          timerRenovacaoTokenTranscricao
+        );
+
+        timerRenovacaoTokenTranscricao =
+          null;
+      }
+
       if (
-        credencialRealtimeAindaValida(
-          tokenTranscricaoPrefetch
-        ) ||
-        promessaTokenTranscricaoPrefetch
+        !credencial ||
+        !credencial.expiraEm
       ) {
         return;
+      }
+
+      const expiraMs =
+        Number(
+          credencial.expiraEm
+        ) * 1000;
+
+      if (!Number.isFinite(expiraMs)) {
+        return;
+      }
+
+      const atraso =
+        Math.max(
+          1000,
+          expiraMs -
+          Date.now() -
+          CONFIG
+            .MARGEM_RENOVACAO_TOKEN_SEGUNDOS *
+            1000
+        );
+
+      timerRenovacaoTokenTranscricao =
+        setTimeout(
+          function () {
+            timerRenovacaoTokenTranscricao =
+              null;
+
+            if (
+              document.visibilityState !==
+                'visible'
+            ) {
+              return;
+            }
+
+            preaquecerTokenTranscricao(
+              true
+            );
+          },
+          atraso
+        );
+    }
+
+
+    function registrarTokenTranscricao(
+      credencial
+    ) {
+      if (
+        !credencialRealtimeAindaValida(
+          credencial,
+          20
+        )
+      ) {
+        return null;
+      }
+
+      tokenTranscricaoPrefetch =
+        credencial;
+
+      try {
+        sessionStorage.setItem(
+          CHAVE_TOKEN_TRANSCRICAO_SESSAO,
+          JSON.stringify(credencial)
+        );
+      } catch (erro) {
+        // O token continua disponível em memória.
+      }
+
+      agendarRenovacaoTokenTranscricao(
+        credencial
+      );
+
+      return credencial;
+    }
+
+
+    function carregarTokenTranscricaoSalvo() {
+      try {
+        const armazenado =
+          sessionStorage.getItem(
+            CHAVE_TOKEN_TRANSCRICAO_SESSAO
+          );
+
+        if (!armazenado) {
+          return null;
+        }
+
+        const credencial =
+          JSON.parse(armazenado);
+
+        if (
+          !credencialRealtimeAindaValida(
+            credencial,
+            CONFIG
+              .MARGEM_RENOVACAO_TOKEN_SEGUNDOS
+          )
+        ) {
+          limparTokenTranscricaoSalvo();
+          return null;
+        }
+
+        return registrarTokenTranscricao(
+          credencial
+        );
+
+      } catch (erro) {
+        limparTokenTranscricaoSalvo();
+        return null;
+      }
+    }
+
+
+    function invalidarTokenTranscricao() {
+      tokenTranscricaoPrefetch =
+        null;
+
+      limparTokenTranscricaoSalvo();
+
+      if (timerRenovacaoTokenTranscricao) {
+        clearTimeout(
+          timerRenovacaoTokenTranscricao
+        );
+
+        timerRenovacaoTokenTranscricao =
+          null;
+      }
+    }
+
+
+    function preaquecerTokenTranscricao(
+      forcarRenovacao = false
+    ) {
+      if (
+        promessaTokenTranscricaoPrefetch
+      ) {
+        return promessaTokenTranscricaoPrefetch;
+      }
+
+      if (
+        !forcarRenovacao &&
+        credencialRealtimeAindaValida(
+          tokenTranscricaoPrefetch,
+          CONFIG
+            .MARGEM_RENOVACAO_TOKEN_SEGUNDOS
+        )
+      ) {
+        agendarRenovacaoTokenTranscricao(
+          tokenTranscricaoPrefetch
+        );
+
+        return Promise.resolve(
+          tokenTranscricaoPrefetch
+        );
       }
 
       promessaTokenTranscricaoPrefetch =
@@ -2254,10 +2540,9 @@
         )
           .then(
             function (credencial) {
-              tokenTranscricaoPrefetch =
-                credencial;
-
-              return credencial;
+              return registrarTokenTranscricao(
+                credencial
+              );
             }
           )
           .catch(
@@ -2276,6 +2561,8 @@
                 null;
             }
           );
+
+      return promessaTokenTranscricaoPrefetch;
     }
 
 
@@ -2285,35 +2572,45 @@
           tokenTranscricaoPrefetch
         )
       ) {
-        const credencial =
-          tokenTranscricaoPrefetch;
-
-        tokenTranscricaoPrefetch =
-          null;
-
-        return credencial;
+        return tokenTranscricaoPrefetch;
       }
 
       if (
         promessaTokenTranscricaoPrefetch
       ) {
         const credencial =
-          await promessaTokenTranscricaoPrefetch;
+          await Promise.race([
+            promessaTokenTranscricaoPrefetch,
+
+            new Promise(
+              function (resolve) {
+                setTimeout(
+                  function () {
+                    resolve(null);
+                  },
+                  CONFIG
+                    .ESPERA_PREFETCH_TOKEN_NO_CLIQUE_MS
+                );
+              }
+            )
+          ]);
 
         if (
           credencialRealtimeAindaValida(
             credencial
           )
         ) {
-          tokenTranscricaoPrefetch =
-            null;
-
           return credencial;
         }
       }
 
-      return solicitarJsonp(
-        'tokenRealtimeTeste'
+      const credencial =
+        await solicitarJsonp(
+          'tokenRealtimeTeste'
+        );
+
+      return registrarTokenTranscricao(
+        credencial
       );
     }
 
@@ -3824,9 +4121,23 @@
             tentativa <
               CONFIG.TENTATIVAS_PREPARACAO_AUDIO
           ) {
-            /* força credencial nova no retry */
-            tokenTranscricaoPrefetch =
-              null;
+            /*
+             * A credencial efêmera pode abrir mais de uma sessão até
+             * expirar. Só a descartamos quando a própria OpenAI indicar
+             * falha de autenticação; erros de RTP/rede reutilizam o token.
+             */
+            const mensagemErro =
+              erro && erro.message
+                ? String(erro.message)
+                : '';
+
+            if (
+              /HTTP\s+(?:401|403)\b/.test(
+                mensagemErro
+              )
+            ) {
+              invalidarTokenTranscricao();
+            }
 
             await new Promise(
               function (resolve) {
@@ -6550,40 +6861,18 @@
       );
 
       /*
-       * FLASH e transcrição aquecem em paralelo.
-       * O microfone NÃO espera a FLASH ficar pronta.
+       * Quando a FLASH já está aberta, ela é reaproveitada. Caso ainda
+       * precise de uma credencial, damos prioridade absoluta ao áudio e
+       * iniciamos a FLASH logo depois que o microfone estiver gravando.
+       * Assim dois cold starts do Apps Script não disputam o primeiro clique.
        */
-      const promessaPre =
-        prepararPreIA()
-          .then(
-            function () {
-              if (
-                atendimentoAtivo &&
-                textoParcial
-              ) {
-                agendarPreIAIncremental(
-                  true
-                );
-              }
+      const reutilizouPre =
+        conexaoPreIAValida();
 
-              return true;
-            }
-          )
-          .catch(
-            function (erro) {
-              console.warn(
-                '[FLASH] Não ficou pronta no início. O fallback permanece disponível.',
-                erro
-              );
-
-              return false;
-            }
-          );
+      let promessaPre =
+        Promise.resolve(true);
 
       try {
-        const reutilizouPre =
-          conexaoPreIAValida();
-
         const preparacaoAudio =
           await prepararAudioRobustoParaAtendimento();
 
@@ -6603,6 +6892,35 @@
 
         atendimentoAtivo =
           true;
+
+        if (!reutilizouPre) {
+          promessaPre =
+            prepararPreIA()
+              .then(
+                function () {
+                  if (
+                    atendimentoAtivo &&
+                    textoParcial
+                  ) {
+                    agendarPreIAIncremental(
+                      true
+                    );
+                  }
+
+                  return true;
+                }
+              )
+              .catch(
+                function (erro) {
+                  console.warn(
+                    '[FLASH] Não ficou pronta no início. O fallback permanece disponível.',
+                    erro
+                  );
+
+                  return false;
+                }
+              );
+        }
 
         /*
          * Cópia comprimida e temporária para um possível resgate seletivo.
@@ -6956,6 +7274,12 @@
 
     carregarMicrofonePreferido();
 
+    /*
+     * Reutiliza após F5 a credencial curta que ainda estiver válida.
+     * sessionStorage é isolado por aba e é limpo ao fechar a sessão.
+     */
+    carregarTokenTranscricaoSalvo();
+
     void atualizarListaMicrofones(
       false
     );
@@ -7016,20 +7340,35 @@
      * microfone e a preparação do WebRTC podem usar um
      * token que já chegou.
      */
-    preaquecerTokenTranscricao();
+    const aquecimentoInicialToken =
+      preaquecerTokenTranscricao();
 
     /*
      * Pré-aquece a sessão textual sem pedir acesso
      * ao microfone. Assim o primeiro atendimento já
      * tende a encontrar a FLASH pronta.
      */
-    void prepararPreIA()
-      .catch(
-        function (erro) {
-          console.warn(
-            '[FLASH] Pré-aquecimento inicial indisponível:',
-            erro
-          );
+    Promise.resolve(
+      aquecimentoInicialToken
+    )
+      .finally(
+        function () {
+          if (
+            document.visibilityState !==
+              'visible'
+          ) {
+            return;
+          }
+
+          void prepararPreIA()
+            .catch(
+              function (erro) {
+                console.warn(
+                  '[FLASH] Pré-aquecimento inicial indisponível:',
+                  erro
+                );
+              }
+            );
         }
       );
 
