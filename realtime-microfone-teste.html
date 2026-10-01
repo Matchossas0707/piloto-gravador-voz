@@ -8,8 +8,16 @@
     content="width=device-width, initial-scale=1"
   >
 
+  <meta name="theme-color" content="#05070a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Piloto Voz">
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+
   <title>
-    Teste Realtime — Piloto
+    Cadastro por voz — Autoescola Piloto
   </title>
 
   <style>
@@ -49,7 +57,7 @@
       padding:
         max(18px, env(safe-area-inset-top))
         max(16px, env(safe-area-inset-right))
-        max(22px, env(safe-area-inset-bottom))
+        calc(114px + env(safe-area-inset-bottom))
         max(16px, env(safe-area-inset-left));
       background:
         radial-gradient(
@@ -104,11 +112,18 @@
       pointer-events: none;
     }
 
+    .topo-linha {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
     .marca {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 14px;
       padding: 7px 10px;
       border: 1px solid rgba(255, 122, 26, 0.34);
       border-radius: 999px;
@@ -131,6 +146,42 @@
         0 0 18px rgba(255, 122, 26, 0.34);
     }
 
+    .modo-controle {
+      display: inline-flex;
+      flex: 0 0 auto;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--borda);
+      border-radius: 999px;
+      background: #080c12;
+    }
+
+    .modo-controle button {
+      min-height: 32px;
+      width: auto;
+      padding: 7px 11px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--texto-suave);
+      font-size: 11px;
+      font-weight: 800;
+      text-shadow: none;
+      box-shadow: none;
+    }
+
+    .modo-controle button:hover:not(:disabled) {
+      transform: none;
+      box-shadow: none;
+      color: #ffffff;
+    }
+
+    .modo-controle button[aria-pressed="true"] {
+      background: rgba(255, 122, 26, 0.16);
+      color: var(--piloto-claro);
+      box-shadow: inset 0 0 0 1px rgba(255, 122, 26, 0.28);
+    }
+
     h1 {
       margin: 0;
       color: #ffffff;
@@ -148,10 +199,40 @@
     }
 
     .acoes {
+      position: fixed;
+      left: 50%;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 20;
+      width: min(calc(100% - 32px), 692px);
+      transform: translateX(-50%);
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.15fr 0.9fr 1.15fr;
       gap: 12px;
-      margin-bottom: 18px;
+      padding: 10px;
+      border: 1px solid rgba(55, 68, 90, 0.9);
+      border-radius: 18px;
+      background: rgba(9, 13, 19, 0.96);
+      box-shadow: 0 12px 38px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(14px);
+    }
+
+    #acoes-processando {
+      grid-column: 1 / -1;
+      min-height: 52px;
+      margin: 0;
+      padding: 16px 8px;
+      color: var(--texto-suave);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    #acoes-processando[hidden] {
+      display: none;
+    }
+
+    .acoes.processando button {
+      display: none;
     }
 
     .microfone-controle {
@@ -196,6 +277,45 @@
       color: var(--texto-suave);
       font-size: 12px;
       line-height: 1.4;
+    }
+
+    .medidor-voz {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      margin-top: 3px;
+    }
+
+    .medidor-trilho {
+      position: relative;
+      height: 9px;
+      overflow: hidden;
+      border: 1px solid #2a3548;
+      border-radius: 999px;
+      background: #080c12;
+    }
+
+    #medidor-voz-preenchimento {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(
+        90deg,
+        #56657a,
+        var(--piloto),
+        #ffd18b
+      );
+      box-shadow: 0 0 14px rgba(255, 122, 26, 0.32);
+      transition: width 90ms linear;
+    }
+
+    #medidor-voz-texto {
+      min-width: 86px;
+      color: var(--texto-suave);
+      font-size: 11px;
+      font-weight: 750;
+      text-align: right;
     }
 
     button {
@@ -275,6 +395,28 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
 
+    #cancelar {
+      border: 1px solid #693238;
+      background:
+        linear-gradient(
+          145deg,
+          #3a2025,
+          #24151a
+        );
+      color: #ffb4b4;
+      text-shadow: none;
+      box-shadow:
+        0 10px 24px rgba(0, 0, 0, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    #cancelar:hover:not(:disabled) {
+      border-color: #96505a;
+      box-shadow:
+        0 13px 28px rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
     #status {
       position: relative;
       min-height: 52px;
@@ -330,6 +472,98 @@
       font-size: 12.5px;
       line-height: 1.45;
       font-variant-numeric: tabular-nums;
+    }
+
+    .resumo-atendimento {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .resumo-indicador {
+      min-height: 66px;
+      padding: 12px 14px;
+      border: 1px solid var(--borda);
+      border-radius: 14px;
+      background: var(--painel-suave);
+    }
+
+    .resumo-indicador span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--texto-suave);
+      font-size: 11px;
+      font-weight: 750;
+      text-transform: uppercase;
+      letter-spacing: 0.045em;
+    }
+
+    .resumo-indicador strong {
+      color: #ffffff;
+      font-size: 19px;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #grupos-cadastro {
+      display: grid;
+      gap: 10px;
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--borda);
+      border-radius: 16px;
+      background: var(--painel-suave);
+    }
+
+    .grupo-cadastro {
+      padding: 12px 13px;
+      border: 1px solid #2a3649;
+      border-radius: 13px;
+      background: #0d131c;
+    }
+
+    .grupo-cadastro-cabecalho {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+
+    .grupo-cadastro-cabecalho strong {
+      color: var(--piloto-claro);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .grupo-cadastro-cabecalho span {
+      color: var(--texto-suave);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .grupo-cadastro-nomes {
+      margin: 0;
+      color: #edf2f9;
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .grupo-cadastro-vazio {
+      align-self: center;
+      margin: 0;
+      padding: 7px 4px;
+      color: var(--texto-suave);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    body.modo-operacao #metricas,
+    body.modo-operacao .diagnostico-tecnico {
+      display: none;
     }
 
     .secao {
@@ -444,13 +678,45 @@
         padding: 20px 16px;
       }
 
-      .acoes {
-        grid-template-columns: 1fr;
-        gap: 9px;
+      .topo-linha {
+        align-items: flex-start;
       }
 
+      .modo-controle button {
+        min-height: 30px;
+        padding: 6px 9px;
+        font-size: 10px;
+      }
+
+      .acoes {
+        bottom: max(8px, env(safe-area-inset-bottom));
+        grid-template-columns: 0.82fr 1.18fr;
+        gap: 9px;
+        width: calc(100% - 24px);
+        padding: 9px;
+        border-radius: 17px;
+      }
+
+      .acoes button:disabled {
+        display: none;
+      }
+
+      #iniciar {
+        grid-column: 1 / -1;
+      }
+
+      #cancelar,
       #finalizar {
-        order: 2;
+        min-height: 56px;
+        padding-inline: 10px;
+      }
+
+      .resumo-atendimento {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .topo-linha {
+        flex-wrap: wrap;
       }
 
       .secao-cabecalho {
@@ -461,16 +727,33 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      button {
+      button,
+      #medidor-voz-preenchimento {
         transition: none;
       }
     }
   </style>
 </head>
 
-<body>
+<body class="modo-operacao">
   <main>
-    <div class="marca">Autoescola Piloto</div>
+    <div class="topo-linha">
+      <div class="marca">Autoescola Piloto</div>
+
+      <div class="modo-controle" aria-label="Modo de visualização">
+        <button
+          id="modo-operacao"
+          type="button"
+          aria-pressed="true"
+        >Operação</button>
+
+        <button
+          id="modo-diagnostico"
+          type="button"
+          aria-pressed="false"
+        >Diagnóstico</button>
+      </div>
+    </div>
 
     <h1>Cadastro por voz</h1>
 
@@ -489,6 +772,16 @@
       <div id="microfone-ativo" aria-live="polite">
         O microfone ativo aparecerá aqui após a primeira permissão.
       </div>
+
+      <div class="medidor-voz" aria-label="Nível de voz captado pelo microfone">
+        <div class="medidor-trilho" aria-hidden="true">
+          <div id="medidor-voz-preenchimento"></div>
+        </div>
+
+        <div id="medidor-voz-texto">
+          Aguardando
+        </div>
+      </div>
     </div>
 
     <div class="acoes">
@@ -500,12 +793,22 @@
       </button>
 
       <button
+        id="cancelar"
+        type="button"
+        disabled
+      >
+        Cancelar atendimento
+      </button>
+
+      <button
         id="finalizar"
         type="button"
         disabled
       >
         Finalizar e cadastrar
       </button>
+
+      <p id="acoes-processando" hidden>Aguarde, processando atendimento...</p>
     </div>
 
     <div
@@ -521,10 +824,35 @@
       aria-live="polite"
     ></div>
 
+    <section class="resumo-atendimento" aria-label="Resumo do atendimento">
+      <div class="resumo-indicador">
+        <span>Tempo</span>
+        <strong id="cronometro-atendimento">00:00</strong>
+      </div>
+
+      <div class="resumo-indicador">
+        <span>Alunos identificados</span>
+        <strong id="contador-alunos">0</strong>
+      </div>
+    </section>
+
+    <section class="secao" aria-labelledby="titulo-cadastro-identificado">
+      <div class="secao-cabecalho">
+        <h2 id="titulo-cadastro-identificado">Cadastro identificado</h2>
+        <span class="apoio" id="situacao-resumo">Prévia automática · confirme ao finalizar</span>
+      </div>
+
+      <div id="grupos-cadastro" aria-live="polite">
+        <p class="grupo-cadastro-vazio">
+          Os alunos identificados aparecerão aqui durante o atendimento.
+        </p>
+      </div>
+    </section>
+
     <section class="secao" aria-labelledby="titulo-transcricao">
       <div class="secao-cabecalho">
         <h2 id="titulo-transcricao">Transcrição ao vivo</h2>
-        <span class="apoio">Fonte autoritativa dos nomes</span>
+        <span class="apoio">Tudo falado nesta gravação</span>
       </div>
 
       <div id="transcricao">
@@ -532,12 +860,12 @@
       </div>
     </section>
 
-    <details>
+    <details class="diagnostico-tecnico">
       <summary>Diagnóstico técnico da FLASH</summary>
       <pre id="preIa">Aguardando atendimento...</pre>
     </details>
 
-    <p class="rodape-ajuda">
+    <p class="rodape-ajuda diagnostico-tecnico">
       A interpretação acontece em paralelo durante a conversa.
       O sistema prioriza o caminho rápido quando o resultado é
       seguro e mantém o fallback como proteção.
@@ -651,6 +979,14 @@
         50 * 60 * 1000,
 
       /*
+       * Após finalizar, preservamos a sessão por poucos segundos para
+       * permitir o próximo atendimento imediato no pico. Depois disso,
+       * fechamos o WebRTC para não pagar por áudio ocioso.
+       */
+      JANELA_REUSO_CONEXAO_MS:
+        30 * 1000,
+
+      /*
        * A API Realtime rejeita commit de buffers com menos de 100 ms.
        * Usamos uma margem maior para celulares que acabaram de retomar
        * a sessão de áudio depois de troca de app, reprodução externa ou
@@ -709,7 +1045,7 @@
     });
 
     const BUILD_ID =
-      '2026.09.28-r6.4-token-estavel';
+      '2026.10.01-r7.0-operacao-pwa-recuperacao';
 
 
     // =========================================================
@@ -725,6 +1061,20 @@
       document.getElementById(
         'finalizar'
       );
+
+    const botaoCancelar =
+      document.getElementById(
+        'cancelar'
+      );
+
+    const barraAcoesElemento =
+      document.querySelector('.acoes');
+
+    const acoesProcessandoElemento =
+      document.getElementById('acoes-processando');
+
+    const situacaoResumoElemento =
+      document.getElementById('situacao-resumo');
 
     const seletorMicrofone =
       document.getElementById(
@@ -756,6 +1106,41 @@
         'transcricao'
       );
 
+    const medidorVozPreenchimento =
+      document.getElementById(
+        'medidor-voz-preenchimento'
+      );
+
+    const medidorVozTexto =
+      document.getElementById(
+        'medidor-voz-texto'
+      );
+
+    const cronometroAtendimentoElemento =
+      document.getElementById(
+        'cronometro-atendimento'
+      );
+
+    const contadorAlunosElemento =
+      document.getElementById(
+        'contador-alunos'
+      );
+
+    const gruposCadastroElemento =
+      document.getElementById(
+        'grupos-cadastro'
+      );
+
+    const botaoModoOperacao =
+      document.getElementById(
+        'modo-operacao'
+      );
+
+    const botaoModoDiagnostico =
+      document.getElementById(
+        'modo-diagnostico'
+      );
+
 
     // =========================================================
     // ESTADO — MICROFONE + TRANSCRIÇÃO
@@ -767,6 +1152,12 @@
     const CHAVE_MICROFONE_PREFERIDO =
       'piloto.microfone.preferido.r6.2';
 
+    const CHAVE_MICROFONE_AUTORIZADO =
+      'piloto.microfone.autorizado.r6.5';
+
+    const CHAVE_MODO_VISUAL =
+      'piloto.modo.visual.r7';
+
     let microfonePreferidoId =
       '';
 
@@ -776,6 +1167,7 @@
      * antiga é descartada quando voltar, em vez de substituir a nova.
      */
     let versaoSolicitacaoMicrofone = 0;
+    let promessaAberturaMicrofone = null;
 
     /* Estatística RTP no instante em que o atendimento foi liberado. */
     let marcadorRtpInicioAtendimento = null;
@@ -823,10 +1215,17 @@
     let timerRenovacaoTokenTranscricao =
       null;
 
+    let timerFechamentoConexaoOciosa =
+      null;
+
+    let promessaPreparacaoAntecipada =
+      null;
+
     const CHAVE_TOKEN_TRANSCRICAO_SESSAO =
       'piloto_token_transcricao_realtime_v1';
 
     let atendimentoAtivo = false;
+    let preparandoAtendimento = false;
     let finalizando = false;
 
     let atendimentoId = 0;
@@ -836,6 +1235,24 @@
     let inicioClique = 0;
     let inicioFinalizacao = 0;
     let tempoTranscricaoFinalUltimo = 0;
+
+    let inicioCronometroAtendimento = 0;
+    let timerCronometroAtendimento = null;
+
+    let contextoAudioMedidor = null;
+    let fonteAudioMedidor = null;
+    let analisadorAudioMedidor = null;
+    let dadosAudioMedidor = null;
+    let frameMedidorVoz = null;
+    let ultimaAtualizacaoMedidorVoz = 0;
+
+    let wakeLockAtendimento = null;
+    let promessaWakeLockAtendimento = null;
+    let versaoWakeLockAtendimento = 0;
+
+    let recuperacaoTotalExecutada = false;
+    let recuperacaoTotalEmAndamento = false;
+    let modoRecuperacaoLocalAtivo = false;
 
     let primeiraDeltaRecebida =
       false;
@@ -855,6 +1272,8 @@
     let transcricaoFinalProcessada =
       false;
 
+    let transcricaoFinalValida = false;
+
     let timeoutTranscricaoFinal =
       null;
 
@@ -864,6 +1283,7 @@
      */
     let gravadorAudioResgate = null;
     let chunksAudioResgate = [];
+    let bytesAudioResgate = 0;
     let promessaAudioResgate = null;
     let resolverAudioResgate = null;
     let audioResgateFinal = null;
@@ -975,6 +1395,107 @@
     }
 
 
+    function interfaceEstaOciosa() {
+      return !(
+        atendimentoAtivo ||
+        preparandoAtendimento ||
+        finalizando ||
+        cadastroEmAndamento
+      );
+    }
+
+
+    function definirPreparacaoVisual(
+      preparando
+    ) {
+      if (!interfaceEstaOciosa()) {
+        return;
+      }
+
+      /* O aquecimento em segundo plano nunca prende o botão Iniciar. */
+      botaoIniciar.disabled = false;
+      botaoIniciar.textContent = 'Iniciar atendimento';
+      seletorMicrofone.disabled = false;
+    }
+
+
+    function registrarPermissaoMicrofone() {
+      try {
+        localStorage.setItem(
+          CHAVE_MICROFONE_AUTORIZADO,
+          '1'
+        );
+      } catch (erro) {
+        // O modo privado pode bloquear localStorage; a sessão atual segue.
+      }
+    }
+
+
+    function esquecerPermissaoMicrofone() {
+      try {
+        localStorage.removeItem(
+          CHAVE_MICROFONE_AUTORIZADO
+        );
+      } catch (erro) {
+        // sem ação
+      }
+    }
+
+
+    function haviaPermissaoMicrofoneSalva() {
+      try {
+        return localStorage.getItem(
+          CHAVE_MICROFONE_AUTORIZADO
+        ) === '1';
+      } catch (erro) {
+        return false;
+      }
+    }
+
+
+    async function podeAquecerMicrofoneSemGesto() {
+      /*
+       * Em Chrome/Edge, Permissions evita abrir um pedido de permissão
+       * inesperado no carregamento. Safari nem sempre oferece essa
+       * consulta; nele usamos a confirmação salva após um uso anterior.
+       */
+      if (
+        navigator.permissions &&
+        typeof navigator.permissions.query ===
+          'function'
+      ) {
+        try {
+          const permissao =
+            await navigator.permissions.query({
+              name: 'microphone'
+            });
+
+          if (
+            permissao.state ===
+              'granted'
+          ) {
+            return true;
+          }
+
+          if (
+            permissao.state ===
+              'denied'
+          ) {
+            esquecerPermissaoMicrofone();
+          }
+
+          /* Nunca exibimos o prompt automaticamente. */
+          return false;
+
+        } catch (erro) {
+          // Safari/iOS: recorre à confirmação persistida abaixo.
+        }
+      }
+
+      return haviaPermissaoMicrofoneSalva();
+    }
+
+
     function mostrarMetricas(
       texto
     ) {
@@ -987,12 +1508,23 @@
       cadastro,
       rotulo = 'FLASH — cadastro provisório'
     ) {
+      situacaoResumoElemento.textContent =
+        'Prévia automática · confirme ao finalizar';
+
       if (!cadastro) {
         preIaElemento.textContent =
           'Aguardando informações...';
 
+        mostrarResumoCadastro(
+          null
+        );
+
         return;
       }
+
+      mostrarResumoCadastro(
+        cadastro
+      );
 
       preIaElemento.textContent =
         rotulo +
@@ -1002,6 +1534,714 @@
           null,
           2
         );
+    }
+
+
+    function normalizarChaveGrupoCadastro(
+      valor
+    ) {
+      return String(valor || '')
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+
+    function obterAlunosDoCadastro(
+      cadastro
+    ) {
+      if (
+        !cadastro ||
+        typeof cadastro !== 'object'
+      ) {
+        return [];
+      }
+
+      const origem =
+        Array.isArray(cadastro.alunos)
+          ? cadastro.alunos
+          : Array.isArray(cadastro.resultados)
+            ? cadastro.resultados
+            : [];
+
+      return origem.map(
+        function (aluno) {
+          const objeto =
+            aluno && typeof aluno === 'object'
+              ? aluno
+              : {};
+
+          const autoIndividual =
+            String(
+              objeto.autoescola ||
+              objeto.autoEscola ||
+              ''
+            ).trim();
+
+          const autoGeral =
+            String(cadastro.autoescola || '').trim();
+
+          const conflitoAutoescola =
+            Boolean(
+              autoIndividual &&
+              autoGeral &&
+              normalizarChaveGrupoCadastro(autoIndividual) !==
+                normalizarChaveGrupoCadastro(autoGeral)
+            );
+
+          return {
+            nome: String(
+              typeof aluno === 'string'
+                ? aluno
+                : objeto.nome || ''
+            ).trim(),
+
+            autoescola: String(
+              autoIndividual ||
+              autoGeral
+            ).trim(),
+
+            instrutor: String(
+              objeto.instrutor ||
+              (!conflitoAutoescola ? cadastro.instrutor : '') ||
+              ''
+            ).trim()
+          };
+        }
+      );
+    }
+
+
+    function mostrarResumoCadastro(
+      cadastro
+    ) {
+      const alunos =
+        obterAlunosDoCadastro(
+          cadastro
+        );
+
+      const nomesPreenchidos =
+        alunos.filter(
+          function (aluno) {
+            return Boolean(aluno.nome);
+          }
+        ).length;
+
+      contadorAlunosElemento.textContent =
+        String(nomesPreenchidos);
+
+      gruposCadastroElemento.replaceChildren();
+
+      if (alunos.length === 0) {
+        const vazio =
+          document.createElement('p');
+
+        vazio.className =
+          'grupo-cadastro-vazio';
+
+        vazio.textContent =
+          'Os alunos identificados aparecerão aqui durante o atendimento.';
+
+        gruposCadastroElemento.appendChild(
+          vazio
+        );
+
+        return;
+      }
+
+      const grupos = [];
+      const indicePorChave =
+        new Map();
+
+      alunos.forEach(
+        function (aluno) {
+          const chave =
+            normalizarChaveGrupoCadastro(
+              aluno.autoescola
+            ) +
+            '|' +
+            normalizarChaveGrupoCadastro(
+              aluno.instrutor
+            );
+
+          let grupo;
+
+          if (indicePorChave.has(chave)) {
+            grupo =
+              grupos[
+                indicePorChave.get(chave)
+              ];
+          } else {
+            grupo = {
+              autoescola:
+                aluno.autoescola ||
+                'Autoescola não identificada',
+              instrutor:
+                aluno.instrutor || '',
+              nomes: []
+            };
+
+            indicePorChave.set(
+              chave,
+              grupos.length
+            );
+
+            grupos.push(grupo);
+          }
+
+          grupo.nomes.push(
+            aluno.nome ||
+            'Nome ainda não identificado'
+          );
+        }
+      );
+
+      const fragmento =
+        document.createDocumentFragment();
+
+      grupos.forEach(
+        function (grupo) {
+          const cartao =
+            document.createElement('article');
+
+          cartao.className =
+            'grupo-cadastro';
+
+          const cabecalho =
+            document.createElement('div');
+
+          cabecalho.className =
+            'grupo-cadastro-cabecalho';
+
+          const autoescola =
+            document.createElement('strong');
+
+          autoescola.textContent =
+            grupo.autoescola;
+
+          const instrutor =
+            document.createElement('span');
+
+          instrutor.textContent =
+            grupo.instrutor
+              ? 'Instrutor ' + grupo.instrutor
+              : 'Instrutor não informado';
+
+          const nomes =
+            document.createElement('p');
+
+          nomes.className =
+            'grupo-cadastro-nomes';
+
+          nomes.textContent =
+            grupo.nomes.join(' • ');
+
+          cabecalho.append(
+            autoescola,
+            instrutor
+          );
+
+          cartao.append(
+            cabecalho,
+            nomes
+          );
+
+          fragmento.appendChild(
+            cartao
+          );
+        }
+      );
+
+      gruposCadastroElemento.appendChild(
+        fragmento
+      );
+    }
+
+
+    function formatarDuracaoAtendimento(
+      milissegundos
+    ) {
+      const totalSegundos =
+        Math.max(
+          0,
+          Math.floor(
+            Number(milissegundos || 0) /
+            1000
+          )
+        );
+
+      const minutos =
+        Math.floor(totalSegundos / 60);
+
+      const segundos =
+        totalSegundos % 60;
+
+      return String(minutos)
+        .padStart(2, '0') +
+        ':' +
+        String(segundos)
+          .padStart(2, '0');
+    }
+
+
+    function atualizarCronometroAtendimento() {
+      if (!inicioCronometroAtendimento) {
+        cronometroAtendimentoElemento
+          .textContent = '00:00';
+
+        return;
+      }
+
+      cronometroAtendimentoElemento
+        .textContent =
+          formatarDuracaoAtendimento(
+            performance.now() -
+            inicioCronometroAtendimento
+          );
+    }
+
+
+    function iniciarCronometroAtendimento() {
+      if (timerCronometroAtendimento) {
+        clearInterval(
+          timerCronometroAtendimento
+        );
+      }
+
+      inicioCronometroAtendimento =
+        performance.now();
+
+      atualizarCronometroAtendimento();
+
+      timerCronometroAtendimento =
+        setInterval(
+          atualizarCronometroAtendimento,
+          1000
+        );
+    }
+
+
+    function pararCronometroAtendimento(
+      zerar = false
+    ) {
+      if (timerCronometroAtendimento) {
+        clearInterval(
+          timerCronometroAtendimento
+        );
+
+        timerCronometroAtendimento =
+          null;
+      }
+
+      if (zerar) {
+        inicioCronometroAtendimento = 0;
+        atualizarCronometroAtendimento();
+      } else {
+        atualizarCronometroAtendimento();
+      }
+    }
+
+
+    function definirModoVisual(
+      modo
+    ) {
+      const diagnostico =
+        modo === 'diagnostico';
+
+      document.body.classList.toggle(
+        'modo-diagnostico',
+        diagnostico
+      );
+
+      document.body.classList.toggle(
+        'modo-operacao',
+        !diagnostico
+      );
+
+      botaoModoOperacao.setAttribute(
+        'aria-pressed',
+        String(!diagnostico)
+      );
+
+      botaoModoDiagnostico.setAttribute(
+        'aria-pressed',
+        String(diagnostico)
+      );
+
+      try {
+        localStorage.setItem(
+          CHAVE_MODO_VISUAL,
+          diagnostico
+            ? 'diagnostico'
+            : 'operacao'
+        );
+      } catch (erro) {
+        // O modo visual atual continua funcionando sem persistência.
+      }
+    }
+
+
+    function carregarModoVisual() {
+      let modo = 'operacao';
+
+      try {
+        modo =
+          localStorage.getItem(
+            CHAVE_MODO_VISUAL
+          ) ||
+          'operacao';
+      } catch (erro) {
+        // Mantém o modo Operação como padrão.
+      }
+
+      definirModoVisual(
+        modo === 'diagnostico'
+          ? 'diagnostico'
+          : 'operacao'
+      );
+    }
+
+
+    function atualizarBarraAcoes() {
+      const processando =
+        botaoIniciar.disabled &&
+        botaoFinalizar.disabled &&
+        botaoCancelar.disabled;
+
+      barraAcoesElemento.classList.toggle(
+        'processando',
+        processando
+      );
+
+      acoesProcessandoElemento.hidden =
+        !processando;
+    }
+
+
+    function atualizarMedidorVoz(
+      instante
+    ) {
+      if (
+        !analisadorAudioMedidor ||
+        !dadosAudioMedidor
+      ) {
+        frameMedidorVoz = null;
+        return;
+      }
+
+      frameMedidorVoz =
+        requestAnimationFrame(
+          atualizarMedidorVoz
+        );
+
+      if (
+        instante -
+          ultimaAtualizacaoMedidorVoz <
+        80
+      ) {
+        return;
+      }
+
+      ultimaAtualizacaoMedidorVoz =
+        instante;
+
+      try {
+        analisadorAudioMedidor
+          .getByteTimeDomainData(
+            dadosAudioMedidor
+          );
+      } catch (erro) {
+        pararMedidorVoz('Microfone ativo');
+        return;
+      }
+
+      let somaQuadrados = 0;
+
+      for (
+        let i = 0;
+        i < dadosAudioMedidor.length;
+        i += 1
+      ) {
+        const amostra =
+          (
+            dadosAudioMedidor[i] -
+            128
+          ) / 128;
+
+        somaQuadrados +=
+          amostra * amostra;
+      }
+
+      const rms =
+        Math.sqrt(
+          somaQuadrados /
+          dadosAudioMedidor.length
+        );
+
+      const nivel =
+        Math.min(
+          1,
+          rms * 7
+        );
+
+      medidorVozPreenchimento
+        .style.width =
+          Math.round(
+            nivel * 100
+          ) + '%';
+
+      if (!atendimentoAtivo) {
+        medidorVozTexto.textContent =
+          microfoneDisponivel()
+            ? 'Microfone pronto'
+            : 'Aguardando';
+      } else if (rms >= 0.018) {
+        medidorVozTexto.textContent =
+          'Voz captada';
+      } else {
+        medidorVozTexto.textContent =
+          'Ouvindo';
+      }
+    }
+
+
+    function pararMedidorVoz(
+      texto = 'Aguardando'
+    ) {
+      if (frameMedidorVoz) {
+        cancelAnimationFrame(
+          frameMedidorVoz
+        );
+
+        frameMedidorVoz = null;
+      }
+
+      medidorVozPreenchimento
+        .style.width = '0%';
+
+      medidorVozTexto.textContent =
+        texto;
+    }
+
+
+    function encerrarMedidorVoz() {
+      pararMedidorVoz();
+
+      if (fonteAudioMedidor) {
+        try {
+          fonteAudioMedidor.disconnect();
+        } catch (erro) {
+          // sem ação
+        }
+      }
+
+      fonteAudioMedidor = null;
+      analisadorAudioMedidor = null;
+      dadosAudioMedidor = null;
+
+      if (contextoAudioMedidor) {
+        try {
+          void contextoAudioMedidor.close().catch(
+            function () {
+              // A falha do medidor nunca interfere na captura.
+            }
+          );
+        } catch (erro) {
+          // sem ação
+        }
+      }
+
+      contextoAudioMedidor = null;
+    }
+
+
+    function prepararMedidorVoz() {
+      encerrarMedidorVoz();
+
+      if (!fluxoMicrofone) {
+        return;
+      }
+
+      const AudioContextDisponivel =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (!AudioContextDisponivel) {
+        medidorVozTexto.textContent =
+          'Microfone pronto';
+        return;
+      }
+
+      try {
+        contextoAudioMedidor =
+          new AudioContextDisponivel();
+
+        fonteAudioMedidor =
+          contextoAudioMedidor
+            .createMediaStreamSource(
+              fluxoMicrofone
+            );
+
+        analisadorAudioMedidor =
+          contextoAudioMedidor
+            .createAnalyser();
+
+        analisadorAudioMedidor.fftSize =
+          512;
+
+        analisadorAudioMedidor
+          .smoothingTimeConstant =
+            0.72;
+
+        dadosAudioMedidor =
+          new Uint8Array(
+            analisadorAudioMedidor
+              .fftSize
+          );
+
+        fonteAudioMedidor.connect(
+          analisadorAudioMedidor
+        );
+
+        pararMedidorVoz(
+          'Microfone pronto'
+        );
+
+      } catch (erro) {
+        console.warn(
+          '[ÁUDIO] Medidor visual indisponível:',
+          erro
+        );
+
+        encerrarMedidorVoz();
+
+        medidorVozTexto.textContent =
+          'Microfone pronto';
+      }
+    }
+
+
+    function iniciarMedidorVoz() {
+      if (!analisadorAudioMedidor) {
+        prepararMedidorVoz();
+      }
+
+      if (!analisadorAudioMedidor) {
+        return;
+      }
+
+      if (
+        contextoAudioMedidor &&
+        contextoAudioMedidor.state ===
+          'suspended'
+      ) {
+        void contextoAudioMedidor
+          .resume()
+          .catch(
+            function () {
+              // O atendimento não depende do medidor.
+            }
+          );
+      }
+
+      if (!frameMedidorVoz) {
+        ultimaAtualizacaoMedidorVoz = 0;
+
+        frameMedidorVoz =
+          requestAnimationFrame(
+            atualizarMedidorVoz
+          );
+      }
+    }
+
+
+    async function manterTelaAcordada() {
+      if (
+        !atendimentoAtivo ||
+        document.visibilityState !== 'visible' ||
+        !navigator.wakeLock ||
+        typeof navigator.wakeLock.request !==
+          'function' ||
+        wakeLockAtendimento ||
+        promessaWakeLockAtendimento
+      ) {
+        return;
+      }
+
+      const minhaVersao =
+        versaoWakeLockAtendimento;
+
+      const promessa =
+        Promise.resolve().then(
+          function () {
+            return navigator.wakeLock.request('screen');
+          }
+        );
+
+      promessaWakeLockAtendimento = promessa;
+
+      try {
+        const bloqueio =
+          await promessa;
+
+        if (
+          !atendimentoAtivo ||
+          document.visibilityState !== 'visible' ||
+          minhaVersao !== versaoWakeLockAtendimento
+        ) {
+          await bloqueio.release();
+          return;
+        }
+
+        wakeLockAtendimento =
+          bloqueio;
+
+        bloqueio.addEventListener(
+          'release',
+          function () {
+            if (
+              wakeLockAtendimento ===
+              bloqueio
+            ) {
+              wakeLockAtendimento = null;
+            }
+          }
+        );
+
+      } catch (erro) {
+        console.warn(
+          '[TELA] Wake Lock indisponível:',
+          erro
+        );
+
+      } finally {
+        if (promessaWakeLockAtendimento === promessa) {
+          promessaWakeLockAtendimento = null;
+        }
+      }
+    }
+
+
+    function liberarTelaAcordada() {
+      versaoWakeLockAtendimento += 1;
+      promessaWakeLockAtendimento = null;
+
+      const bloqueio =
+        wakeLockAtendimento;
+
+      wakeLockAtendimento = null;
+
+      if (bloqueio) {
+        void bloqueio
+          .release()
+          .catch(
+            function () {
+              // O sistema continua normalmente sem Wake Lock.
+            }
+          );
+      }
     }
 
 
@@ -1055,6 +2295,7 @@
     function limparAudioResgateMemoria() {
       gravadorAudioResgate = null;
       chunksAudioResgate = [];
+      bytesAudioResgate = 0;
       promessaAudioResgate = null;
       resolverAudioResgate = null;
       audioResgateFinal = null;
@@ -1072,7 +2313,12 @@
 
       gravadorAudioResgate = null;
       chunksAudioResgate = [];
+      bytesAudioResgate = 0;
       audioResgateFinal = null;
+
+      if (resolverAudioResgate) {
+        resolverAudioResgate(null);
+      }
 
       if (
         gravador &&
@@ -1111,6 +2357,7 @@
 
       audioResgateDescartado = false;
       chunksAudioResgate = [];
+      bytesAudioResgate = 0;
       audioResgateFinal = null;
 
       const mimePreferido =
@@ -1179,9 +2426,22 @@
             return;
           }
 
-          chunksAudioResgate.push(
-            evento.data
-          );
+          bytesAudioResgate +=
+            evento.data.size;
+
+          if (
+            bytesAudioResgate >
+              CONFIG.MAX_AUDIO_RESGATE_BYTES
+          ) {
+            console.warn(
+              '[ÁUDIO] A cópia local excedeu o limite seguro e foi descartada. A transcrição ao vivo continua normalmente.'
+            );
+
+            descartarGravacaoAudioResgate();
+            return;
+          }
+
+          chunksAudioResgate.push(evento.data);
         }
       );
 
@@ -1239,6 +2499,10 @@
       gravador.addEventListener(
         'error',
         function (evento) {
+          if (minhaVersao !== versaoGravacaoResgate) {
+            return;
+          }
+
           console.warn(
             '[R5] Falha na gravação local de segurança:',
             evento &&
@@ -1246,6 +2510,8 @@
               ? evento.error
               : evento
           );
+
+          descartarGravacaoAudioResgate();
         }
       );
 
@@ -2838,6 +4104,8 @@
 
       faixaMicrofone.enabled =
         true;
+
+      iniciarMedidorVoz();
     }
 
 
@@ -2849,11 +4117,13 @@
        * a captura nova.
        */
       versaoSolicitacaoMicrofone += 1;
+      promessaAberturaMicrofone = null;
 
       const fluxoAnterior =
         fluxoMicrofone;
 
       silenciarMicrofone();
+      encerrarMedidorVoz();
 
       faixaMicrofone = null;
       fluxoMicrofone = null;
@@ -2880,7 +4150,30 @@
     }
 
 
-    async function obterMicrofone() {
+    function obterMicrofone() {
+      if (microfoneDisponivel()) {
+        return Promise.resolve(fluxoMicrofone);
+      }
+
+      if (promessaAberturaMicrofone) {
+        return promessaAberturaMicrofone;
+      }
+
+      const promessa =
+        abrirMicrofone().finally(
+          function () {
+            if (promessaAberturaMicrofone === promessa) {
+              promessaAberturaMicrofone = null;
+            }
+          }
+        );
+
+      promessaAberturaMicrofone = promessa;
+      return promessa;
+    }
+
+
+    async function abrirMicrofone() {
       if (
         document.visibilityState !==
           'visible'
@@ -2993,9 +4286,13 @@
       microfonePrecisaReconectar =
         false;
 
+      registrarPermissaoMicrofone();
+
       definirMicrofoneAtivo(
         faixaObtida
       );
+
+      prepararMedidorVoz();
 
       void atualizarListaMicrofones(
         true
@@ -3030,6 +4327,17 @@
             falhar(
               'O celular interrompeu o microfone. Toque em Iniciar e grave novamente.'
             );
+
+          } else if (
+            document.visibilityState ===
+              'visible'
+          ) {
+            setTimeout(
+              function () {
+                void prepararInicioRapidoEconomico();
+              },
+              350
+            );
           }
         }
       );
@@ -3057,18 +4365,39 @@
 
           fecharConexaoTranscricao();
 
-          if (
-            atendimentoAtivo ||
-            finalizando
-          ) {
+          if (atendimentoAtivo) {
             falhar(
               'O microfone foi interrompido. Toque em Iniciar para reconectar antes de continuar.'
+            );
+
+          } else if (
+            finalizando &&
+            !transcricaoFinalValida &&
+            !cadastroEmAndamento
+          ) {
+            void recuperarGravacaoAposFalhaRealtime(
+              'O microfone foi encerrado após o clique em Finalizar.'
+            );
+
+          } else if (
+            document.visibilityState ===
+              'visible'
+          ) {
+            setTimeout(
+              function () {
+                void prepararInicioRapidoEconomico();
+              },
+              350
             );
           }
         }
       );
 
       silenciarMicrofone();
+
+      pararMedidorVoz(
+        'Microfone pronto'
+      );
 
       return fluxoMicrofone;
     }
@@ -3454,7 +4783,55 @@
     }
 
 
+    function cancelarFechamentoConexaoOciosa() {
+      if (
+        timerFechamentoConexaoOciosa
+      ) {
+        clearTimeout(
+          timerFechamentoConexaoOciosa
+        );
+
+        timerFechamentoConexaoOciosa =
+          null;
+      }
+    }
+
+
+    function agendarFechamentoConexaoOciosa() {
+      cancelarFechamentoConexaoOciosa();
+
+      if (!conexaoTranscricao) {
+        return;
+      }
+
+      timerFechamentoConexaoOciosa =
+        setTimeout(
+          function () {
+            timerFechamentoConexaoOciosa =
+              null;
+
+            if (!interfaceEstaOciosa()) {
+              agendarFechamentoConexaoOciosa();
+              return;
+            }
+
+            silenciarMicrofone();
+            fecharConexaoTranscricao();
+
+            /*
+             * Mantemos apenas microfone local + credencial preparados.
+             * Nenhuma sessão de áudio paga permanece aberta.
+             */
+            preaquecerTokenTranscricao();
+          },
+          CONFIG.JANELA_REUSO_CONEXAO_MS
+        );
+    }
+
+
     function fecharConexaoTranscricao() {
+      cancelarFechamentoConexaoOciosa();
+
       const canalAnterior =
         canalTranscricao;
 
@@ -3506,6 +4883,8 @@
       canalTranscricao = null;
       conexaoTranscricaoCriadaEm = 0;
 
+      cancelarFechamentoConexaoOciosa();
+
       try {
         if (
           dc &&
@@ -3528,14 +4907,18 @@
         // sem ação
       }
 
-      if (
-        atendimentoAtivo ||
-        finalizando
-      ) {
-        falhar(
+      if (finalizando && !transcricaoFinalValida) {
+        void recuperarGravacaoAposFalhaRealtime(
           mensagem ||
-          'A conexão de transcrição foi interrompida. Toque em Iniciar para reconectar.'
+          'A conexão de transcrição foi interrompida durante a finalização.'
         );
+
+      } else if (atendimentoAtivo) {
+        ativarModoRecuperacaoLocal(
+          mensagem ||
+          'A conexão de transcrição foi interrompida durante o atendimento.'
+        );
+
       }
     }
 
@@ -3745,15 +5128,26 @@
                   erro
                 );
 
-                falhar(
-                  'Falha ao concluir a transcrição.\n' +
-                  (
-                    erro &&
-                    erro.message
-                      ? erro.message
-                      : String(erro)
-                  )
-                );
+                if (finalizando) {
+                  void recuperarGravacaoAposFalhaRealtime(
+                    'Falha ao concluir a transcrição. ' +
+                    (
+                      erro && erro.message
+                        ? erro.message
+                        : String(erro)
+                    )
+                  );
+                } else {
+                  ativarModoRecuperacaoLocal(
+                    'Falha ao processar a transcrição ao vivo. ' +
+                    (
+                      erro &&
+                      erro.message
+                        ? erro.message
+                        : String(erro)
+                    )
+                  );
+                }
               }
             );
 
@@ -3908,6 +5302,8 @@
 
       const promessaAtual =
         (async function () {
+          const meuAtendimento = atendimentoId;
+
           if (
             conexaoTranscricao ||
             canalTranscricao
@@ -3920,6 +5316,13 @@
               obterMicrofone(),
               obterTokenTranscricao()
             ]);
+
+          if (
+            meuAtendimento !== atendimentoId ||
+            document.visibilityState !== 'visible'
+          ) {
+            throw new Error('A preparação anterior foi interrompida.');
+          }
 
           const credencial =
             resultados[1];
@@ -3951,8 +5354,146 @@
     }
 
 
+    async function prepararInicioRapidoEconomico(
+      forcar = false
+    ) {
+      if (
+        document.visibilityState !==
+          'visible' ||
+        !interfaceEstaOciosa()
+      ) {
+        return false;
+      }
+
+      if (
+        promessaPreparacaoAntecipada
+      ) {
+        return promessaPreparacaoAntecipada;
+      }
+
+      const promessaAtual =
+        (async function () {
+          try {
+            if (
+              forcar !== true &&
+              !microfoneDisponivel()
+            ) {
+              const podeAquecer =
+                await podeAquecerMicrofoneSemGesto();
+
+              if (!podeAquecer) {
+                return false;
+              }
+            }
+
+            if (
+              document.visibilityState !==
+                'visible' ||
+              !interfaceEstaOciosa()
+            ) {
+              return false;
+            }
+
+            definirPreparacaoVisual(true);
+
+            definirStatus(
+              'Preparando microfone e credencial...'
+            );
+
+            await Promise.all([
+              obterMicrofone(),
+              obterTokenTranscricao()
+            ]);
+
+            if (
+              document.visibilityState !==
+                'visible' ||
+              !interfaceEstaOciosa() ||
+              !microfoneDisponivel()
+            ) {
+              throw new Error(
+                'A preparação antecipada foi interrompida.'
+              );
+            }
+
+            /*
+             * A captura local fica pronta e desabilitada. Não criamos
+             * WebRTC aqui: a sessão de áudio cobrada só nasce no clique.
+             */
+            silenciarMicrofone();
+
+            definirStatus(
+              'Sistema preparado. Microfone e credencial prontos para iniciar.',
+              'sucesso'
+            );
+
+            return true;
+
+          } catch (erro) {
+            console.warn(
+              '[ÁUDIO] Preparação antecipada indisponível:',
+              erro
+            );
+
+            const nomeErro =
+              erro && erro.name
+                ? String(erro.name)
+                : '';
+
+            if (
+              nomeErro ===
+                'NotAllowedError' ||
+              nomeErro ===
+                'PermissionDeniedError'
+            ) {
+              esquecerPermissaoMicrofone();
+            }
+
+            promessaConexaoTranscricao =
+              null;
+
+            if (
+              document.visibilityState ===
+                'visible' &&
+              interfaceEstaOciosa()
+            ) {
+              definirStatus(
+                'Toque em Iniciar atendimento. Se o navegador pedir, autorize o microfone.'
+              );
+            }
+
+            return false;
+
+          } finally {
+            if (
+              promessaPreparacaoAntecipada ===
+                promessaAtual
+            ) {
+              promessaPreparacaoAntecipada =
+                null;
+            }
+
+            definirPreparacaoVisual(false);
+          }
+        })();
+
+      promessaPreparacaoAntecipada =
+        promessaAtual;
+
+      return promessaAtual;
+    }
+
+
     async function prepararAudioRobustoParaAtendimento() {
       let ultimoErro = null;
+      const meuAtendimento = atendimentoId;
+
+      const validarPreparacaoAtual =
+        function () {
+          if (meuAtendimento !== atendimentoId) {
+            throw new Error('A preparação anterior foi substituída.');
+          }
+        };
 
       /*
        * Caminho rápido R6.2: se a faixa e a conexão continuam vivas,
@@ -3970,6 +5511,8 @@
           const marcadorAntesReuso =
             await obterEstatisticaRtpAudio();
 
+          validarPreparacaoAtual();
+
           ativarMicrofone();
 
           const fluxoReutilizado =
@@ -3978,6 +5521,8 @@
               CONFIG.MIN_PACOTES_RTP_PREPARACAO,
               CONFIG.TIMEOUT_REUSO_RTP_MS
             );
+
+          validarPreparacaoAtual();
 
           if (!fluxoReutilizado.ok) {
             throw new Error(
@@ -4003,6 +5548,8 @@
           };
 
         } catch (erroReuso) {
+          validarPreparacaoAtual();
+
           ultimoErro =
             erroReuso;
 
@@ -4026,6 +5573,8 @@
           CONFIG.TENTATIVAS_PREPARACAO_AUDIO;
         tentativa += 1
       ) {
+        validarPreparacaoAtual();
+
         /*
          * Reconstrução protegida: usada no primeiro atendimento ou
          * quando a captura existente falha no teste de saúde. Uma faixa
@@ -4039,7 +5588,7 @@
 
         if (
           microfonePrecisaReconectar ||
-          !microfoneDisponivel()
+          (!microfoneDisponivel() && !promessaAberturaMicrofone)
         ) {
           pararFluxoMicrofone();
           microfonePrecisaReconectar =
@@ -4055,6 +5604,8 @@
 
           await prepararTranscricao();
 
+          validarPreparacaoAtual();
+
           if (
             document.visibilityState !==
               'visible'
@@ -4069,12 +5620,16 @@
           const marcadorAntes =
             await obterEstatisticaRtpAudio();
 
+          validarPreparacaoAtual();
+
           const fluxo =
             await aguardarFluxoRtpDesde(
               marcadorAntes,
               CONFIG.MIN_PACOTES_RTP_PREPARACAO,
               CONFIG.TIMEOUT_FLUXO_RTP_MS
             );
+
+          validarPreparacaoAtual();
 
           if (!fluxo.ok) {
             throw new Error(
@@ -4100,6 +5655,8 @@
           };
 
         } catch (erro) {
+          validarPreparacaoAtual();
+
           ultimoErro = erro;
 
           console.warn(
@@ -5371,6 +6928,13 @@
       rotulo = 'FLASH — cadastro final'
     ) {
       if (
+        !finalizando ||
+        cadastroEmAndamento
+      ) {
+        return;
+      }
+
+      if (
         interpretacaoPreIAValida(
           interpretacao
         )
@@ -5495,6 +7059,8 @@
       interpretacaoOriginal,
       textoOriginal
     ) {
+      const meuAtendimento = atendimentoId;
+
       const decisao =
         avaliarNecessidadeResgateNomes(
           interpretacaoOriginal,
@@ -5528,6 +7094,14 @@
       }
 
       if (
+        meuAtendimento !== atendimentoId ||
+        !finalizando ||
+        recuperacaoTotalExecutada
+      ) {
+        return false;
+      }
+
+      if (
         !audioInfo ||
         !audioInfo.blob ||
         audioInfo.blob.size <= 0 ||
@@ -5555,6 +7129,14 @@
             )
           ]);
 
+        if (
+          meuAtendimento !== atendimentoId ||
+          !finalizando ||
+          recuperacaoTotalExecutada
+        ) {
+          return false;
+        }
+
         const credencial =
           resultados[0];
 
@@ -5570,6 +7152,8 @@
         }
 
         contextoResgatePendente = {
+          atendimentoId:
+            meuAtendimento,
           interpretacaoOriginal:
             interpretacaoOriginal,
           textoOriginal:
@@ -5601,6 +7185,10 @@
         return true;
 
       } catch (erro) {
+        if (meuAtendimento !== atendimentoId || !finalizando) {
+          return false;
+        }
+
         console.warn(
           '[R5] Resgate seletivo indisponível; seguindo com a transcrição original:',
           erro
@@ -5614,10 +7202,277 @@
     }
 
 
+    function ativarModoRecuperacaoLocal(
+      mensagemOriginal
+    ) {
+      if (
+        !atendimentoAtivo ||
+        finalizando ||
+        cadastroEmAndamento ||
+        modoRecuperacaoLocalAtivo
+      ) {
+        return false;
+      }
+
+      if (
+        !gravadorAudioResgate &&
+        !promessaAudioResgate &&
+        !audioResgateFinal
+      ) {
+        fecharConexaoTranscricao();
+
+        falhar(
+          'A transmissão ao vivo foi interrompida e este navegador não conseguiu manter a cópia local de segurança. Nenhum dado foi enviado para a planilha.'
+        );
+
+        return false;
+      }
+
+      modoRecuperacaoLocalAtivo = true;
+      microfonePrecisaReconectar = true;
+      promessaConexaoTranscricao = null;
+      promessaPreparacaoAntecipada = null;
+
+      /*
+       * A queda do WebRTC não interrompe a MediaStream local. Mantemos o
+       * MediaRecorder e o medidor ativos para que o atendente possa concluir
+       * a conversa normalmente. O áudio só será enviado à recuperação de
+       * alta precisão quando o atendente tocar em Finalizar.
+       */
+      fecharConexaoTranscricao();
+
+      definirStatus(
+        'A transcrição ao vivo foi interrompida, mas a gravação local continua protegida. Continue o atendimento e finalize normalmente.',
+        'gravando'
+      );
+
+      mostrarMetricas(
+        'Modo de recuperação local ativo' +
+        (
+          mensagemOriginal
+            ? ' | Motivo: ' +
+              String(mensagemOriginal)
+            : ''
+        )
+      );
+
+      return true;
+    }
+
+
+    async function recuperarGravacaoAposFalhaRealtime(
+      mensagemOriginal
+    ) {
+      if (
+        recuperacaoTotalExecutada ||
+        recuperacaoTotalEmAndamento ||
+        cadastroEmAndamento
+      ) {
+        return false;
+      }
+
+      recuperacaoTotalExecutada = true;
+      recuperacaoTotalEmAndamento = true;
+      modoRecuperacaoLocalAtivo = false;
+      resgateNomesExecutado = true;
+      motivoResgateNomes =
+        'recuperação integral após falha da transcrição ao vivo';
+
+      limparTimeoutTranscricaoFinal();
+
+      atendimentoId += 1;
+      const meuAtendimento = atendimentoId;
+
+      transcricaoFinalProcessada = true;
+      transcricaoFinalValida = false;
+
+      if (timerPreIA) {
+        clearTimeout(timerPreIA);
+        timerPreIA = null;
+      }
+
+      if (timerPreFinalEspeculativa) {
+        clearTimeout(timerPreFinalEspeculativa);
+        timerPreFinalEspeculativa = null;
+      }
+
+      abortarRequisicoesPreIAEmVoo();
+      ultimoResultadoPreIA = null;
+      preFinalEspeculativa = null;
+
+      atendimentoAtivo = false;
+      finalizando = true;
+
+      if (!inicioFinalizacao) {
+        inicioFinalizacao = performance.now();
+      }
+
+      botaoIniciar.disabled = true;
+      botaoFinalizar.disabled = true;
+      botaoCancelar.disabled = true;
+      seletorMicrofone.disabled = true;
+
+      silenciarMicrofone();
+      pararMedidorVoz(
+        'Recuperando áudio'
+      );
+      pararCronometroAtendimento();
+      liberarTelaAcordada();
+
+      promessaConexaoTranscricao =
+        null;
+
+      fecharConexaoTranscricao();
+
+      definirStatus(
+        'A transcrição ao vivo foi interrompida. Recuperando a gravação local automaticamente...'
+      );
+
+      let audioInfo;
+
+      try {
+        audioInfo =
+          await aguardarAudioResgateFinal();
+      } catch (erro) {
+        audioInfo = null;
+      }
+
+      if (
+        meuAtendimento !== atendimentoId ||
+        !finalizando
+      ) {
+        return false;
+      }
+
+      if (
+        !audioInfo ||
+        !audioInfo.blob ||
+        audioInfo.blob.size <= 0 ||
+        audioInfo.blob.size >
+          CONFIG.MAX_AUDIO_RESGATE_BYTES
+      ) {
+        recuperacaoTotalEmAndamento =
+          false;
+
+        falhar(
+          'A transcrição ao vivo falhou e a cópia local do áudio não pôde ser recuperada. Nenhum dado foi enviado para a planilha.'
+        );
+
+        return false;
+      }
+
+      try {
+        const inicioResgate =
+          performance.now();
+
+        const resultados =
+          await Promise.all([
+            solicitarJsonp(
+              'tokenResgateNomes'
+            ),
+            blobParaBase64(
+              audioInfo.blob
+            )
+          ]);
+
+        if (
+          meuAtendimento !== atendimentoId ||
+          !finalizando
+        ) {
+          return false;
+        }
+
+        const credencial =
+          resultados[0];
+
+        const base64 =
+          resultados[1];
+
+        if (
+          !credencial ||
+          !credencial.token ||
+          !base64
+        ) {
+          throw new Error(
+            'A credencial de recuperação não foi entregue.'
+          );
+        }
+
+        contextoResgatePendente = {
+          atendimentoId:
+            meuAtendimento,
+          interpretacaoOriginal: null,
+          textoOriginal: '',
+          iniciadoEm:
+            inicioResgate,
+          motivo:
+            motivoResgateNomes,
+          modoRecuperacaoTotal: true,
+          mensagemOriginal:
+            String(
+              mensagemOriginal || ''
+            )
+        };
+
+        enviarPostAppsScript(
+          'resgatar_nomes',
+          {
+            tokenResgate:
+              credencial.token,
+            audioBase64:
+              base64,
+            mimeType:
+              audioInfo.mimeType ||
+              'audio/webm',
+            nomeArquivo:
+              nomeArquivoParaMime(
+                audioInfo.mimeType
+              )
+          },
+          ''
+        );
+
+        return true;
+
+      } catch (erro) {
+        if (meuAtendimento !== atendimentoId || !finalizando) {
+          return false;
+        }
+
+        contextoResgatePendente =
+          null;
+
+        recuperacaoTotalEmAndamento =
+          false;
+
+        falhar(
+          'A transcrição ao vivo falhou e não foi possível iniciar a recuperação local. Nenhum dado foi enviado para a planilha.\n' +
+          (
+            erro && erro.message
+              ? erro.message
+              : String(erro)
+          )
+        );
+
+        return false;
+      }
+    }
+
+
     async function concluirResgateNomes(
       dados,
       contexto
     ) {
+      if (
+        !contexto ||
+        contexto.atendimentoId !== atendimentoId ||
+        !finalizando
+      ) {
+        return;
+      }
+
+      const meuAtendimento = atendimentoId;
+
       const textoOriginal =
         String(
           contexto &&
@@ -5652,6 +7507,20 @@
           : 0;
 
       if (!textoResgatado) {
+        if (
+          contexto &&
+          contexto.modoRecuperacaoTotal
+        ) {
+          recuperacaoTotalEmAndamento =
+            false;
+
+          falhar(
+            'A recuperação recebeu o áudio, mas não identificou nenhuma fala. Nenhum dado foi enviado para a planilha.'
+          );
+
+          return;
+        }
+
         definirStatus(
           'A segunda escuta não trouxe texto melhor. Cadastrando com a transcrição original...'
         );
@@ -5665,6 +7534,8 @@
       }
 
       resgateNomesUsado = true;
+      recuperacaoTotalEmAndamento =
+        false;
 
       textoParcial =
         textoResgatado;
@@ -5674,7 +7545,10 @@
           textoResgatado;
 
       definirStatus(
-        'Segunda escuta concluída. Reinterpretando todos os dados...'
+        contexto &&
+        contexto.modoRecuperacaoTotal
+          ? 'Gravação recuperada. Interpretando e cadastrando os dados...'
+          : 'Segunda escuta concluída. Reinterpretando todos os dados...'
       );
 
       /*
@@ -5701,6 +7575,13 @@
         );
       }
 
+      if (
+        meuAtendimento !== atendimentoId ||
+        !finalizando
+      ) {
+        return;
+      }
+
       const escolhida =
         escolherInterpretacaoAposResgate(
           interpretacaoOriginal,
@@ -5708,6 +7589,7 @@
         );
 
       const textoEscolhido =
+        contexto.modoRecuperacaoTotal ||
         escolhida ===
           interpretacaoResgatada
           ? textoResgatado
@@ -5716,10 +7598,13 @@
       prosseguirCadastroComInterpretacao(
         escolhida,
         textoEscolhido,
-        escolhida ===
-          interpretacaoResgatada
-          ? 'R6 — cadastro após segunda escuta'
-          : 'FLASH — cadastro final (resgate não superou o original)'
+        contexto &&
+        contexto.modoRecuperacaoTotal
+          ? 'Recuperação integral — cadastro final'
+          : escolhida ===
+              interpretacaoResgatada
+            ? 'R6 — cadastro após segunda escuta'
+            : 'FLASH — cadastro final (resgate não superou o original)'
       );
     }
 
@@ -5728,10 +7613,36 @@
       contexto,
       mensagem
     ) {
+      if (
+        !contexto ||
+        contexto.atendimentoId !== atendimentoId ||
+        !finalizando
+      ) {
+        return;
+      }
+
       console.warn(
         '[R5] Segunda escuta não pôde ser usada:',
         mensagem || 'sem detalhes'
       );
+
+      if (
+        contexto &&
+        contexto.modoRecuperacaoTotal
+      ) {
+        recuperacaoTotalEmAndamento =
+          false;
+
+        falhar(
+          'A transcrição ao vivo falhou e a recuperação da gravação também não foi concluída. Nenhum dado foi enviado para a planilha.\n' +
+          String(
+            mensagem ||
+            'Falha sem detalhes.'
+          )
+        );
+
+        return;
+      }
 
       const interpretacaoOriginal =
         contexto &&
@@ -5828,6 +7739,14 @@
     async function tratarEventoTranscricao(
       evento
     ) {
+      if (
+        (!atendimentoAtivo && !finalizando) ||
+        modoRecuperacaoLocalAtivo ||
+        recuperacaoTotalExecutada
+      ) {
+        return;
+      }
+
       if (
         evento.type ===
         'input_audio_buffer.committed'
@@ -5967,12 +7886,15 @@
         limparTimeoutTranscricaoFinal();
 
         if (!textoFinal) {
-          falhar(
-            'Nenhuma fala foi identificada.'
+          void recuperarGravacaoAposFalhaRealtime(
+            'A transcrição ao vivo não retornou texto.'
           );
 
           return;
         }
+
+        transcricaoFinalValida = true;
+        const meuAtendimento = atendimentoId;
 
         textoParcial =
           textoFinal;
@@ -6018,11 +7940,27 @@
             textoFinal
           );
 
+        if (
+          meuAtendimento !== atendimentoId ||
+          !finalizando ||
+          recuperacaoTotalExecutada
+        ) {
+          return;
+        }
+
         const resgateIniciado =
           await tentarResgateNomesAntesCadastro(
             interpretacaoFinal,
             textoFinal
           );
+
+        if (
+          meuAtendimento !== atendimentoId ||
+          !finalizando ||
+          recuperacaoTotalExecutada
+        ) {
+          return;
+        }
 
         if (
           resgateIniciado
@@ -6042,6 +7980,10 @@
         evento.type ===
         'conversation.item.input_audio_transcription.failed'
       ) {
+        if (transcricaoFinalValida) {
+          return;
+        }
+
         if (
           !eventoTranscricaoPertenceAoItemAtual(
             evento
@@ -6060,10 +8002,17 @@
 
         fecharConexaoTranscricao();
 
-        falhar(
-          'Falha na transcrição:\n' +
-          mensagem
-        );
+        if (finalizando) {
+          void recuperarGravacaoAposFalhaRealtime(
+            'Falha na transcrição: ' +
+            mensagem
+          );
+        } else {
+          ativarModoRecuperacaoLocal(
+            'Falha na transcrição ao vivo: ' +
+            mensagem
+          );
+        }
 
         return;
       }
@@ -6072,6 +8021,11 @@
         evento.type ===
         'error'
       ) {
+        /* O transporte não é mais necessário após o texto final válido. */
+        if (transcricaoFinalValida) {
+          return;
+        }
+
         const mensagem =
           evento.error &&
           evento.error.message
@@ -6091,20 +8045,32 @@
           promessaConexaoTranscricao =
             null;
 
-          pararFluxoMicrofone();
           fecharConexaoTranscricao();
 
-          falhar(
-            'O servidor recebeu menos de 100 ms de áudio. A sessão defeituosa foi descartada. Toque em Iniciar: será criada uma conexão nova antes de liberar a gravação.'
-          );
+          if (finalizando) {
+            void recuperarGravacaoAposFalhaRealtime(
+              'O servidor recebeu um buffer de áudio curto demais.'
+            );
+          } else {
+            ativarModoRecuperacaoLocal(
+              'O servidor interrompeu o buffer de áudio ao vivo.'
+            );
+          }
 
           return;
         }
 
-        falhar(
-          'Erro Realtime:\n' +
-          mensagem
-        );
+        if (finalizando) {
+          void recuperarGravacaoAposFalhaRealtime(
+            'Erro Realtime: ' +
+            mensagem
+          );
+        } else {
+          ativarModoRecuperacaoLocal(
+            'Erro Realtime: ' +
+            mensagem
+          );
+        }
       }
     }
 
@@ -6308,11 +8274,18 @@
             finalizando =
               false;
 
+            seletorMicrofone.disabled = false;
+
             botaoIniciar.disabled =
               false;
 
             botaoFinalizar.disabled =
               true;
+
+            botaoCancelar.disabled =
+              true;
+
+            agendarFechamentoConexaoOciosa();
           },
 
           CONFIG
@@ -6507,11 +8480,19 @@
           finalizando =
             false;
 
+          descartarGravacaoAudioResgate();
+          seletorMicrofone.disabled = false;
+
           botaoIniciar.disabled =
             false;
 
           botaoFinalizar.disabled =
             true;
+
+          botaoCancelar.disabled =
+            true;
+
+          agendarFechamentoConexaoOciosa();
 
           return;
         }
@@ -6587,7 +8568,11 @@
 
         const avisoResgate =
           resgateNomesUsado
-            ? '\nR6.3: dados revisados pela segunda escuta de alta precisão.'
+            ? (
+                recuperacaoTotalExecutada
+                  ? '\nA gravação local foi recuperada após a falha da transmissão ao vivo.'
+                  : '\nDados revisados pela segunda escuta de alta precisão.'
+              )
             : '';
 
         definirStatus(
@@ -6696,6 +8681,11 @@
           false;
 
         silenciarMicrofone();
+        pararMedidorVoz(
+          'Microfone pronto'
+        );
+        pararCronometroAtendimento();
+        liberarTelaAcordada();
 
         botaoIniciar.disabled =
           false;
@@ -6703,8 +8693,13 @@
         botaoFinalizar.disabled =
           true;
 
+        botaoCancelar.disabled =
+          true;
+
         seletorMicrofone.disabled =
           false;
+
+        agendarFechamentoConexaoOciosa();
 
         /*
          * Só limpa estado LOCAL.
@@ -6722,9 +8717,23 @@
          */
         limparAudioResgateMemoria();
 
-        mostrarPreIA(
-          null
-        );
+        if (
+          dados.cadastro &&
+          Array.isArray(
+            dados.cadastro.alunos
+          )
+        ) {
+          mostrarResumoCadastro({
+            alunos:
+              dados.cadastro.alunos
+          });
+        }
+
+        situacaoResumoElemento.textContent =
+          'Confirmado na planilha';
+
+        preIaElemento.textContent =
+          'Atendimento concluído e confirmado pela planilha.';
       }
     );
 
@@ -6769,6 +8778,15 @@
       motivoResgateNomes = '';
       contextoResgatePendente = null;
       tempoResgateNomesUltimo = 0;
+      recuperacaoTotalExecutada = false;
+      recuperacaoTotalEmAndamento = false;
+      modoRecuperacaoLocalAtivo = false;
+
+      pararCronometroAtendimento(
+        true
+      );
+
+      liberarTelaAcordada();
 
       preIncrementaisDisparadas = 0;
       tamanhoTextoUltimaPreIA = 0;
@@ -6781,6 +8799,8 @@
 
       transcricaoFinalProcessada =
         false;
+
+      transcricaoFinalValida = false;
 
       limparTimeoutTranscricaoFinal();
 
@@ -6822,13 +8842,28 @@
     async function iniciar() {
       if (
         atendimentoAtivo ||
+        preparandoAtendimento ||
         finalizando ||
         cadastroEmAndamento
       ) {
         return;
       }
 
+      if (navigator.onLine === false) {
+        definirStatus(
+          'Sem conexão com a internet. Conecte o aparelho antes de iniciar o atendimento.',
+          'erro'
+        );
+
+        return;
+      }
+
+      cancelarFechamentoConexaoOciosa();
+
       resetarAtendimentoLocal();
+
+      const meuAtendimento = atendimentoId;
+      preparandoAtendimento = true;
 
       inicioClique =
         performance.now();
@@ -6843,6 +8878,9 @@
         true;
 
       botaoFinalizar.disabled =
+        true;
+
+      botaoCancelar.disabled =
         true;
 
       seletorMicrofone.disabled =
@@ -6876,6 +8914,10 @@
         const preparacaoAudio =
           await prepararAudioRobustoParaAtendimento();
 
+        if (meuAtendimento !== atendimentoId) {
+          return;
+        }
+
         if (
           document.visibilityState !==
             'visible'
@@ -6892,6 +8934,8 @@
 
         atendimentoAtivo =
           true;
+
+        preparandoAtendimento = false;
 
         if (!reutilizouPre) {
           promessaPre =
@@ -6939,6 +8983,10 @@
           'gravando'
         );
 
+        iniciarCronometroAtendimento();
+        iniciarMedidorVoz();
+        void manterTelaAcordada();
+
         transcricaoElemento
           .textContent =
             'Ouvindo...';
@@ -6977,6 +9025,9 @@
         botaoFinalizar.disabled =
           false;
 
+        botaoCancelar.disabled =
+          false;
+
         /*
          * Não aguardamos esta promessa.
          * Ela continua aquecendo em paralelo.
@@ -6984,6 +9035,10 @@
         void promessaPre;
 
       } catch (erro) {
+        if (meuAtendimento !== atendimentoId) {
+          return;
+        }
+
         falhar(
           'Não foi possível iniciar.\n' +
           (
@@ -6993,7 +9048,101 @@
               : String(erro)
           )
         );
+      } finally {
+        if (meuAtendimento === atendimentoId) {
+          preparandoAtendimento = false;
+        }
       }
+    }
+
+
+    function cancelarAtendimento() {
+      if (
+        !atendimentoAtivo ||
+        finalizando ||
+        cadastroEmAndamento
+      ) {
+        return;
+      }
+
+      const confirmado =
+        window.confirm(
+          'Cancelar este atendimento inteiro?\n\nNenhum dos alunos desta gravação será cadastrado.'
+        );
+
+      if (!confirmado) {
+        return;
+      }
+
+      /*
+       * Primeiro invalidamos o turno. Assim qualquer evento de
+       * transcrição que já esteja viajando pela rede será ignorado.
+       */
+      atendimentoAtivo = false;
+      finalizando = false;
+
+      silenciarMicrofone();
+      pararMedidorVoz(
+        'Microfone pronto'
+      );
+      pararCronometroAtendimento(
+        true
+      );
+      liberarTelaAcordada();
+      inicioCapturaAudio = 0;
+      marcadorRtpInicioAtendimento = null;
+
+      try {
+        if (
+          canalTranscricao &&
+          canalTranscricao.readyState ===
+            'open'
+        ) {
+          canalTranscricao.send(
+            JSON.stringify({
+              type:
+                'input_audio_buffer.clear'
+            })
+          );
+        }
+      } catch (erro) {
+        // A conexão será fechada logo abaixo de qualquer forma.
+      }
+
+      promessaConexaoTranscricao =
+        null;
+
+      fecharConexaoTranscricao();
+      resetarAtendimentoLocal();
+
+      botaoIniciar.disabled =
+        false;
+
+      botaoIniciar.textContent =
+        'Iniciar atendimento';
+
+      botaoCancelar.disabled =
+        true;
+
+      botaoFinalizar.disabled =
+        true;
+
+      seletorMicrofone.disabled =
+        false;
+
+      transcricaoElemento.textContent =
+        'Atendimento cancelado. A gravação foi descartada.';
+
+      definirStatus(
+        'Atendimento cancelado. Nenhum dado foi enviado para a planilha.'
+      );
+
+      mostrarMetricas(
+        'Cancelamento concluído | Sessão de áudio encerrada para economizar créditos.'
+      );
+
+      /* Já deixa apenas a credencial pronta para o próximo clique. */
+      preaquecerTokenTranscricao();
     }
 
 
@@ -7005,6 +9154,9 @@
         return;
       }
 
+      const meuAtendimento = atendimentoId;
+      inicioFinalizacao = performance.now();
+
       if (
         !canalTranscricao ||
         canalTranscricao
@@ -7012,8 +9164,8 @@
       ) {
         fecharConexaoTranscricao();
 
-        falhar(
-          'A conexão de transcrição não está disponível. Toque em Iniciar para reconectar e repita este atendimento.'
+        void recuperarGravacaoAposFalhaRealtime(
+          'A conexão de transcrição não estava disponível ao finalizar.'
         );
 
         return;
@@ -7025,10 +9177,16 @@
       atendimentoAtivo =
         false;
 
+      pararCronometroAtendimento();
+      liberarTelaAcordada();
+
       inicioFinalizacao =
         performance.now();
 
       botaoFinalizar.disabled =
+        true;
+
+      botaoCancelar.disabled =
         true;
 
       botaoIniciar.disabled =
@@ -7084,6 +9242,14 @@
         );
 
       if (
+        meuAtendimento !== atendimentoId ||
+        !finalizando ||
+        recuperacaoTotalExecutada
+      ) {
+        return;
+      }
+
+      if (
         fluxoDuranteAtendimento.suportado &&
         !fluxoDuranteAtendimento.ok
       ) {
@@ -7093,11 +9259,13 @@
         promessaConexaoTranscricao =
           null;
 
-        pararFluxoMicrofone();
+        promessaPreparacaoAntecipada =
+          null;
+
         fecharConexaoTranscricao();
 
-        falhar(
-          'O celular deixou de enviar áudio para a transcrição. Nenhum cadastro foi perdido: este atendimento não foi enviado. Toque em Iniciar e grave novamente.'
+        void recuperarGravacaoAposFalhaRealtime(
+          'O celular deixou de enviar o áudio pelo WebRTC durante o atendimento.'
         );
 
         return;
@@ -7133,7 +9301,11 @@
         );
       }
 
-      if (!finalizando) {
+      if (
+        !finalizando ||
+        meuAtendimento !== atendimentoId ||
+        recuperacaoTotalExecutada
+      ) {
         return;
       }
 
@@ -7148,14 +9320,17 @@
 
         fecharConexaoTranscricao();
 
-        falhar(
-          'O celular interrompeu a captura de áudio. Toque em Iniciar e grave novamente; o microfone será reconectado automaticamente.'
+        void recuperarGravacaoAposFalhaRealtime(
+          'A captura ao vivo foi interrompida antes do envio final.'
         );
 
         return;
       }
 
       silenciarMicrofone();
+      pararMedidorVoz(
+        'Microfone pronto'
+      );
       inicioCapturaAudio = 0;
 
       try {
@@ -7173,6 +9348,7 @@
             function () {
               if (
                 !finalizando ||
+                meuAtendimento !== atendimentoId ||
                 transcricaoFinalProcessada
               ) {
                 return;
@@ -7180,8 +9356,8 @@
 
               fecharConexaoTranscricao();
 
-              falhar(
-                'A transcrição final não chegou dentro do limite. A conexão será refeita no próximo atendimento.'
+              void recuperarGravacaoAposFalhaRealtime(
+                'A transcrição final não chegou dentro do limite.'
               );
             },
             CONFIG
@@ -7191,8 +9367,8 @@
       } catch (erro) {
         fecharConexaoTranscricao();
 
-        falhar(
-          'Não foi possível finalizar a transcrição.\n' +
+        void recuperarGravacaoAposFalhaRealtime(
+          'Não foi possível finalizar a transcrição. ' +
           (
             erro &&
             erro.message
@@ -7217,6 +9393,13 @@
     function falhar(
       mensagem
     ) {
+      atendimentoId += 1;
+      preparandoAtendimento = false;
+      modoRecuperacaoLocalAtivo = false;
+      recuperacaoTotalEmAndamento = false;
+
+      abortarRequisicoesPreIAEmVoo();
+
       limparTimeoutTranscricaoFinal();
 
       /*
@@ -7226,6 +9409,13 @@
       descartarGravacaoAudioResgate();
 
       silenciarMicrofone();
+      pararMedidorVoz(
+        microfoneDisponivel()
+          ? 'Microfone pronto'
+          : 'Aguardando'
+      );
+      pararCronometroAtendimento();
+      liberarTelaAcordada();
       inicioCapturaAudio = 0;
 
       atendimentoAtivo =
@@ -7245,11 +9435,19 @@
       botaoIniciar.disabled =
         false;
 
+      botaoIniciar.textContent =
+        'Iniciar atendimento';
+
       botaoFinalizar.disabled =
+        true;
+
+      botaoCancelar.disabled =
         true;
 
       seletorMicrofone.disabled =
         false;
+
+      agendarFechamentoConexaoOciosa();
 
       definirStatus(
         mensagem,
@@ -7262,9 +9460,50 @@
       'Versão: ' + BUILD_ID
     );
 
+    carregarModoVisual();
+
+    atualizarBarraAcoes();
+
+    if (typeof MutationObserver === 'function') {
+      const observadorBarraAcoes =
+        new MutationObserver(atualizarBarraAcoes);
+
+      observadorBarraAcoes.observe(
+        barraAcoesElemento,
+        {
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['disabled']
+        }
+      );
+    }
+
+    botaoModoOperacao.addEventListener(
+      'click',
+      function () {
+        definirModoVisual(
+          'operacao'
+        );
+      }
+    );
+
+    botaoModoDiagnostico.addEventListener(
+      'click',
+      function () {
+        definirModoVisual(
+          'diagnostico'
+        );
+      }
+    );
+
     botaoIniciar.addEventListener(
       'click',
       iniciar
+    );
+
+    botaoCancelar.addEventListener(
+      'click',
+      cancelarAtendimento
     );
 
     botaoFinalizar.addEventListener(
@@ -7311,10 +9550,12 @@
           true;
 
         definirStatus(
-          'Microfone selecionado. Toque em Iniciar atendimento.'
+          'Microfone selecionado. Preparando início rápido...'
         );
 
-        preaquecerTokenTranscricao();
+        void prepararInicioRapidoEconomico(
+          true
+        );
       }
     );
 
@@ -7335,42 +9576,60 @@
     }
 
     /*
-     * Pré-busca a credencial da transcrição sem abrir
-     * o microfone. No primeiro clique, a permissão do
-     * microfone e a preparação do WebRTC podem usar um
-     * token que já chegou.
+     * R6.6 — preparação econômica antes do clique.
+     * Se este aparelho já autorizou o microfone, apenas a captura local e
+     * a credencial ficam prontas, com a faixa desabilitada. O WebRTC pago
+     * só é criado quando o atendente toca em Iniciar.
+     * No primeiro uso, nenhum prompt é aberto sozinho: o clique continua
+     * sendo o gesto que pede a autorização do navegador.
      */
-    const aquecimentoInicialToken =
-      preaquecerTokenTranscricao();
+    void (async function aquecerSistemaInicial() {
+      const audioPronto =
+        await prepararInicioRapidoEconomico();
 
-    /*
-     * Pré-aquece a sessão textual sem pedir acesso
-     * ao microfone. Assim o primeiro atendimento já
-     * tende a encontrar a FLASH pronta.
-     */
-    Promise.resolve(
-      aquecimentoInicialToken
-    )
-      .finally(
-        function () {
-          if (
-            document.visibilityState !==
-              'visible'
-          ) {
-            return;
+      if (!audioPronto) {
+        await preaquecerTokenTranscricao();
+      }
+
+      if (
+        document.visibilityState !==
+          'visible'
+      ) {
+        return;
+      }
+
+      void prepararPreIA()
+        .catch(
+          function (erro) {
+            console.warn(
+              '[FLASH] Pré-aquecimento inicial indisponível:',
+              erro
+            );
           }
+        );
+    })();
 
-          void prepararPreIA()
+    if (
+      'serviceWorker' in navigator
+    ) {
+      window.addEventListener(
+        'load',
+        function () {
+          void navigator.serviceWorker
+            .register(
+              './service-worker.js'
+            )
             .catch(
               function (erro) {
                 console.warn(
-                  '[FLASH] Pré-aquecimento inicial indisponível:',
+                  '[PWA] Service Worker indisponível:',
                   erro
                 );
               }
             );
         }
       );
+    }
 
 
     // =========================================================
@@ -7385,6 +9644,7 @@
         true;
 
       const haviaGravacaoEmCurso =
+        preparandoAtendimento ||
         atendimentoAtivo ||
         (
           finalizando &&
@@ -7392,6 +9652,10 @@
         );
 
       if (haviaGravacaoEmCurso) {
+        atendimentoId += 1;
+        preparandoAtendimento = false;
+        abortarRequisicoesPreIAEmVoo();
+
         atendimentoInterrompidoSegundoPlano =
           true;
 
@@ -7406,9 +9670,19 @@
         botaoFinalizar.disabled =
           true;
 
+        botaoCancelar.disabled =
+          true;
+
         seletorMicrofone.disabled =
           false;
+
+        pararCronometroAtendimento();
+        pararMedidorVoz(
+          'Gravação interrompida'
+        );
       }
+
+      liberarTelaAcordada();
 
       /*
        * Não aguardamos uma preparação que começou antes do background.
@@ -7417,8 +9691,13 @@
       promessaConexaoTranscricao =
         null;
 
+      promessaPreparacaoAntecipada =
+        null;
+
       pararFluxoMicrofone();
       fecharConexaoTranscricao();
+
+      definirPreparacaoVisual(false);
 
       /*
        * A conexão textual também pode ficar congelada no background.
@@ -7442,9 +9721,8 @@
         false;
 
       /*
-       * Não pedimos getUserMedia automaticamente: em mobile, o gesto
-       * no botão Iniciar é o ponto mais confiável para reabrir a sessão
-       * de áudio. Aqui apenas garantimos que não existe recurso velho.
+       * Ao voltar para a plataforma, reabrimos apenas o microfone local e
+       * renovamos a credencial. A sessão paga continua fechada até o clique.
        */
       promessaConexaoTranscricao =
         null;
@@ -7460,15 +9738,25 @@
       microfonePrecisaReconectar =
         true;
 
-      preaquecerTokenTranscricao();
+      void prepararInicioRapidoEconomico()
+        .finally(
+          function () {
+            if (
+              document.visibilityState !==
+                'visible'
+            ) {
+              return;
+            }
 
-      void prepararPreIA()
-        .catch(
-          function (erro) {
-            console.warn(
-              '[FLASH] Pré-aquecimento após retorno indisponível:',
-              erro
-            );
+            void prepararPreIA()
+              .catch(
+                function (erro) {
+                  console.warn(
+                    '[FLASH] Pré-aquecimento após retorno indisponível:',
+                    erro
+                  );
+                }
+              );
           }
         );
 
@@ -7494,6 +9782,9 @@
         botaoFinalizar.disabled =
           true;
 
+        botaoCancelar.disabled =
+          true;
+
         seletorMicrofone.disabled =
           false;
       }
@@ -7510,6 +9801,10 @@
           interromperAudioAoSairDoPrimeiroPlano();
         } else {
           prepararRetornoAoPrimeiroPlano();
+
+          if (atendimentoAtivo) {
+            void manterTelaAcordada();
+          }
         }
       }
     );
@@ -7535,11 +9830,17 @@
       'blur',
       function () {
         /*
-         * Alguns navegadores móveis não emitem visibilitychange de forma
-         * confiável ao trocar para reprodução de áudio em outro app.
-         * blur fecha essa lacuna.
+         * blur também ocorre ao tocar na barra do navegador, abrir alguns
+         * seletores ou alternar o foco da janela. Só destruímos o áudio se
+         * a página realmente ficou oculta; visibilitychange/pagehide
+         * continuam cobrindo a troca real de aplicativo.
          */
-        interromperAudioAoSairDoPrimeiroPlano();
+        if (
+          document.visibilityState ===
+            'hidden'
+        ) {
+          interromperAudioAoSairDoPrimeiroPlano();
+        }
       }
     );
 
